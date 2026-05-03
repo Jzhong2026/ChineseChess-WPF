@@ -1,0 +1,210 @@
+<UserControl x:Class="ChineseChess.Views.BoardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:cal="http://www.caliburnproject.org">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <Style x:Key="BoardLineStyle" TargetType="Line">
+            <Setter Property="Stroke" Value="#76543A" />
+            <Setter Property="StrokeThickness" Value="2" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+        </Style>
+
+        <Style x:Key="SquareButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="78" />
+            <Setter Property="Height" Value="78" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="LastFromMarkerStyle" TargetType="Rectangle">
+            <Setter Property="Width" Value="66" />
+            <Setter Property="Height" Value="66" />
+            <Setter Property="RadiusX" Value="10" />
+            <Setter Property="RadiusY" Value="10" />
+            <Setter Property="Fill" Value="#18A86D2D" />
+            <Setter Property="Stroke" Value="#AA785229" />
+            <Setter Property="StrokeThickness" Value="2" />
+            <Setter Property="StrokeDashArray" Value="5 3" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Visibility" Value="{Binding IsLastFrom, Converter={StaticResource BoolToVisibility}}" />
+        </Style>
+
+        <Style x:Key="LastToMarkerStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="70" />
+            <Setter Property="Height" Value="70" />
+            <Setter Property="Fill" Value="#2255AFA8" />
+            <Setter Property="Stroke" Value="#AA2B6864" />
+            <Setter Property="StrokeThickness" Value="3" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Visibility" Value="{Binding IsLastTo, Converter={StaticResource BoolToVisibility}}" />
+        </Style>
+
+        <Style x:Key="TargetDotStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="Fill" Value="#993A9A98" />
+            <Setter Property="Visibility" Value="{Binding IsLegalTarget, Converter={StaticResource BoolToVisibility}}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="PieceBorderStyle" TargetType="Border">
+            <Setter Property="Width" Value="62" />
+            <Setter Property="Height" Value="62" />
+            <Setter Property="CornerRadius" Value="31" />
+            <Setter Property="Background" Value="#F8DFA0" />
+            <Setter Property="BorderThickness" Value="4" />
+            <Setter Property="BorderBrush" Value="#202020" />
+            <Setter Property="Visibility" Value="{Binding HasPiece, Converter={StaticResource BoolToVisibility}}" />
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect BlurRadius="13" ShadowDepth="5" Opacity="0.28" />
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRedPiece}" Value="True">
+                    <Setter Property="BorderBrush" Value="#C52928" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="#2B6864" />
+                    <Setter Property="BorderThickness" Value="5" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsLastTo}" Value="True">
+                    <Setter Property="Background" Value="#FFEFC0" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PieceTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#202020" />
+            <Setter Property="FontFamily" Value="KaiTi, SimSun, Microsoft YaHei UI" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="35" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRedPiece}" Value="True">
+                    <Setter Property="Foreground" Value="#C52928" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Viewbox Stretch="Uniform">
+        <Border Width="720"
+                Height="800"
+                Background="#D9A85B"
+                BorderBrush="#6D3927"
+                BorderThickness="8"
+                CornerRadius="8">
+            <Grid>
+                <Canvas Width="624"
+                        Height="702"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        IsHitTestVisible="False">
+                    <Line X1="0" Y1="0" X2="624" Y2="0" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="0" Y1="78" X2="624" Y2="78" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="0" Y1="156" X2="624" Y2="156" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="0" Y1="234" X2="624" Y2="234" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="0" Y1="312" X2="624" Y2="312" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="0" Y1="390" X2="624" Y2="390" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="0" Y1="468" X2="624" Y2="468" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="0" Y1="546" X2="624" Y2="546" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="0" Y1="624" X2="624" Y2="624" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="0" Y1="702" X2="624" Y2="702" Style="{StaticResource BoardLineStyle}" />
+
+                    <Line X1="0" Y1="0" X2="0" Y2="312" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="78" Y1="0" X2="78" Y2="312" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="156" Y1="0" X2="156" Y2="312" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="234" Y1="0" X2="234" Y2="312" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="312" Y1="0" X2="312" Y2="312" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="390" Y1="0" X2="390" Y2="312" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="468" Y1="0" X2="468" Y2="312" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="546" Y1="0" X2="546" Y2="312" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="624" Y1="0" X2="624" Y2="312" Style="{StaticResource BoardLineStyle}" />
+
+                    <Line X1="0" Y1="390" X2="0" Y2="702" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="78" Y1="390" X2="78" Y2="702" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="156" Y1="390" X2="156" Y2="702" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="234" Y1="390" X2="234" Y2="702" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="312" Y1="390" X2="312" Y2="702" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="390" Y1="390" X2="390" Y2="702" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="468" Y1="390" X2="468" Y2="702" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="546" Y1="390" X2="546" Y2="702" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="624" Y1="390" X2="624" Y2="702" Style="{StaticResource BoardLineStyle}" />
+
+                    <Line X1="234" Y1="0" X2="390" Y2="156" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="390" Y1="0" X2="234" Y2="156" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="234" Y1="546" X2="390" Y2="702" Style="{StaticResource BoardLineStyle}" />
+                    <Line X1="390" Y1="546" X2="234" Y2="702" Style="{StaticResource BoardLineStyle}" />
+
+                    <TextBlock Text="楚河"
+                               Canvas.Left="158"
+                               Canvas.Top="326"
+                               FontFamily="KaiTi, SimSun"
+                               FontSize="38"
+                               Foreground="#AA4C3022" />
+                    <TextBlock Text="汉界"
+                               Canvas.Left="426"
+                               Canvas.Top="326"
+                               FontFamily="KaiTi, SimSun"
+                               FontSize="38"
+                               Foreground="#AA4C3022" />
+                </Canvas>
+
+                <ItemsControl ItemsSource="{Binding Squares}"
+                              Width="624"
+                              Height="702"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <Canvas ClipToBounds="False" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="Canvas.Left" Value="{Binding HitLeft}" />
+                            <Setter Property="Canvas.Top" Value="{Binding HitTop}" />
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource SquareButtonStyle}"
+                                    ToolTip="{Binding CoordinateText}"
+                                    cal:Message.Attach="[Event Click] = [Action Select]">
+                                <Grid>
+                                    <Rectangle Style="{StaticResource LastFromMarkerStyle}" />
+                                    <Ellipse Style="{StaticResource LastToMarkerStyle}" />
+                                    <Ellipse Style="{StaticResource TargetDotStyle}" />
+                                    <Border Style="{StaticResource PieceBorderStyle}">
+                                        <TextBlock Text="{Binding PieceText}"
+                                                   Style="{StaticResource PieceTextStyle}" />
+                                    </Border>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </Border>
+    </Viewbox>
+</UserControl>

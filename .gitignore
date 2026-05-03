@@ -1,0 +1,9 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/ChineseChess/.vs/ChineseChess/CopilotIndices/18.0.981.45449
+/ChineseChess/.vs
+/ChineseChess/ChineseChess/bin/Debug/net10.0-windows
+/ChineseChess/ChineseChess/obj
+*.user
