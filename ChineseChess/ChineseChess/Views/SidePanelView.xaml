@@ -184,12 +184,27 @@
                         <RowDefinition />
                         <RowDefinition />
                         <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
+                        <RowDefinition />
                     </Grid.RowDefinitions>
                     <TextBlock Text="SearchStats" FontWeight="Bold" Grid.ColumnSpan="2" Margin="0,0,0,8" />
                     <TextBlock Text="深度" Grid.Row="1" Foreground="#7A6658" />
                     <TextBlock Text="{Binding SearchDepthText}" Grid.Row="1" Grid.Column="1" FontWeight="Bold" HorizontalAlignment="Right" />
                     <TextBlock Text="{Binding SearchNodesText}" Grid.Row="2" Foreground="#7A6658" />
                     <TextBlock Text="{Binding SearchTimeText}" Grid.Row="2" Grid.Column="1" FontWeight="Bold" HorizontalAlignment="Right" />
+                    <TextBlock Text="Score" Grid.Row="3" Foreground="#7A6658" />
+                    <TextBlock Text="{Binding SearchScoreText}" Grid.Row="3" Grid.Column="1" FontWeight="Bold" HorizontalAlignment="Right" />
+                    <TextBlock Text="TT hits" Grid.Row="4" Foreground="#7A6658" />
+                    <TextBlock Text="{Binding SearchTtHitsText}" Grid.Row="4" Grid.Column="1" FontWeight="Bold" HorizontalAlignment="Right" />
+                    <TextBlock Text="TT stores" Grid.Row="5" Foreground="#7A6658" />
+                    <TextBlock Text="{Binding SearchTtStoresText}" Grid.Row="5" Grid.Column="1" FontWeight="Bold" HorizontalAlignment="Right" />
+                    <TextBlock Text="TT move hits" Grid.Row="6" Foreground="#7A6658" />
+                    <TextBlock Text="{Binding SearchTtBestMoveHitsText}" Grid.Row="6" Grid.Column="1" FontWeight="Bold" HorizontalAlignment="Right" />
+                    <TextBlock Text="TT score hits" Grid.Row="7" Foreground="#7A6658" />
+                    <TextBlock Text="{Binding SearchTtScoreHitsText}" Grid.Row="7" Grid.Column="1" FontWeight="Bold" HorizontalAlignment="Right" />
                 </Grid>
             </Border>
 

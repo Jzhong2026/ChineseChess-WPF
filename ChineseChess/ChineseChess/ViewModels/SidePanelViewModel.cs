@@ -108,6 +108,10 @@ public sealed class SidePanelViewModel : Screen, IHandle<BoardStateChangedMessag
                 NotifyOfPropertyChange(nameof(SearchNodesText));
                 NotifyOfPropertyChange(nameof(SearchTimeText));
                 NotifyOfPropertyChange(nameof(SearchScoreText));
+                NotifyOfPropertyChange(nameof(SearchTtHitsText));
+                NotifyOfPropertyChange(nameof(SearchTtStoresText));
+                NotifyOfPropertyChange(nameof(SearchTtBestMoveHitsText));
+                NotifyOfPropertyChange(nameof(SearchTtScoreHitsText));
             }
         }
     }
@@ -141,6 +145,10 @@ public sealed class SidePanelViewModel : Screen, IHandle<BoardStateChangedMessag
     public string SearchNodesText => SearchStats?.Nodes.ToString("N0") ?? "-";
     public string SearchTimeText => SearchStats is null ? "-" : $"{Math.Round(SearchStats.TimeMs)} ms";
     public string SearchScoreText => SearchStats is null ? "-" : Math.Round(SearchStats.BestScore).ToString();
+    public string SearchTtHitsText => SearchStats?.TtHits.ToString("N0") ?? "-";
+    public string SearchTtStoresText => SearchStats?.TtStores.ToString("N0") ?? "-";
+    public string SearchTtBestMoveHitsText => SearchStats?.TtBestMoveHits.ToString("N0") ?? "-";
+    public string SearchTtScoreHitsText => SearchStats?.TtScoreHits.ToString("N0") ?? "-";
 
     public async Task ChooseRed() => await _events.PublishOnUIThreadAsync(new SideChangedMessage(Side.Red));
     public async Task ChooseBlack() => await _events.PublishOnUIThreadAsync(new SideChangedMessage(Side.Black));

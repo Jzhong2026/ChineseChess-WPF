@@ -7,6 +7,12 @@ public sealed class XiangqiAiService
 {
     private readonly XiangqiEngine _engine;
     private readonly Random _random = new();
+    private readonly Dictionary<ulong, TranspositionEntry> _transpositionTable = new();
+
+    private const ulong ZobristSeed = 0x9E3779B97F4A7C15UL;
+    private const int MaxTranspositionEntries = 250_000;
+    private static readonly ulong[,,,] ZobristPieces = CreateZobristPieces();
+    private static readonly ulong[] ZobristTurn = { NextZobristValue(0), NextZobristValue(1) };
 
     private static readonly IReadOnlyDictionary<PieceType, int> PieceValues = new Dictionary<PieceType, int>
     {
@@ -47,10 +53,15 @@ public sealed class XiangqiAiService
         var maxDepth = level == 3 ? 4 : 6;
         var deadline = watch.ElapsedMilliseconds + Math.Max(30, timeLimitMs);
         var nodes = 0;
+        var ttHits = 0;
+        var ttStores = 0;
+        var ttBestMoveHits = 0;
+        var ttScoreHits = 0;
         var bestMove = legalMoves[0];
         var bestScore = EvaluateBoard(_engine.ApplyMove(board, bestMove), side, side);
         var depthReached = 0;
 
+        _transpositionTable.Clear();
         for (var depth = 1; depth <= maxDepth; depth++)
         {
             if (depth > 1 && watch.ElapsedMilliseconds >= deadline - 10) break;
@@ -81,7 +92,11 @@ public sealed class XiangqiAiService
                     watch,
                     deadline,
                     ref nodes,
-                    ref aborted);
+                    ref aborted,
+                    ref ttHits,
+                    ref ttStores,
+                    ref ttBestMoveHits,
+                    ref ttScoreHits);
 
                 if (!aborted && score > iterBestScore)
                 {
@@ -100,7 +115,7 @@ public sealed class XiangqiAiService
             }
         }
 
-        return new AiSearchResult(bestMove, new SearchStats(Math.Max(depthReached, 0), nodes, watch.Elapsed.TotalMilliseconds, bestScore));
+        return new AiSearchResult(bestMove, new SearchStats(Math.Max(depthReached, 0), nodes, watch.Elapsed.TotalMilliseconds, bestScore, ttHits, ttStores, ttBestMoveHits, ttScoreHits));
     }
 
     private double Negamax(
@@ -115,10 +130,41 @@ public sealed class XiangqiAiService
         Stopwatch watch,
         long deadline,
         ref int nodes,
-        ref bool aborted)
+        ref bool aborted,
+        ref int ttHits,
+        ref int ttStores,
+        ref int ttBestMoveHits,
+        ref int ttScoreHits)
     {
         if ((nodes & 0x3f) == 0 && watch.ElapsedMilliseconds >= deadline) aborted = true;
         if (aborted) return 0;
+
+        var alphaOriginal = alpha;
+        var betaOriginal = beta;
+        var hash = ComputeZobristHash(board, turn);
+        Move? ttBestMove = null;
+        if (_transpositionTable.TryGetValue(hash, out var entry))
+        {
+            ttHits++;
+            ttBestMove = entry.BestMove;
+            if (entry.Depth >= depth)
+            {
+                ttScoreHits++;
+                switch (entry.Bound)
+                {
+                    case TranspositionBound.Exact:
+                        return entry.Score;
+                    case TranspositionBound.Lower:
+                        alpha = Math.Max(alpha, entry.Score);
+                        break;
+                    case TranspositionBound.Upper:
+                        beta = Math.Min(beta, entry.Score);
+                        break;
+                }
+
+                if (alpha >= beta) return entry.Score;
+            }
+        }
 
         var status = _engine.GetGameStatus(board, turn);
         if (status == GameStatus.RedWins) return perspective == Side.Red ? 999999 : -999999;
@@ -127,7 +173,8 @@ public sealed class XiangqiAiService
         if (depth == 0) return Quiescence(board, turn, alpha, beta, perspective, aiSide, history, watch, deadline, ref nodes, ref aborted, 0);
 
         var best = double.NegativeInfinity;
-        var moves = OrderMoves(board, _engine.GetLegalMoves(board, turn, history));
+        Move? bestMove = null;
+        var moves = OrderMoves(board, _engine.GetLegalMoves(board, turn, history), ttBestMove);
         foreach (var move in moves)
         {
             if (aborted) break;
@@ -144,11 +191,33 @@ public sealed class XiangqiAiService
                 watch,
                 deadline,
                 ref nodes,
-                ref aborted);
+                ref aborted,
+                ref ttHits,
+                ref ttStores,
+                ref ttBestMoveHits,
+                ref ttScoreHits);
 
-            best = Math.Max(best, score);
+            if (score > best)
+            {
+                best = score;
+                bestMove = move;
+            }
+
             alpha = Math.Max(alpha, score);
             if (alpha >= beta) break;
+        }
+
+        if (!aborted && best > double.NegativeInfinity)
+        {
+            var bound = best <= alphaOriginal
+                ? TranspositionBound.Upper
+                : best >= betaOriginal
+                    ? TranspositionBound.Lower
+                    : TranspositionBound.Exact;
+
+            StoreTransposition(hash, new TranspositionEntry(depth, best, bound, bestMove));
+            ttStores++;
+            if (ttBestMove is not null && bestMove is not null && SameMove(ttBestMove, bestMove)) ttBestMoveHits++;
         }
 
         return best;
@@ -216,13 +285,70 @@ public sealed class XiangqiAiService
         return bestMoves[_random.Next(bestMoves.Count)];
     }
 
-    private IEnumerable<Move> OrderMoves(Piece?[,] board, IEnumerable<Move> moves)
+    private IEnumerable<Move> OrderMoves(Piece?[,] board, IEnumerable<Move> moves, Move? ttBestMove = null)
     {
         return moves.OrderByDescending(move =>
         {
+            if (ttBestMove is not null && SameMove(move, ttBestMove)) return 1_000_000;
             var captured = board[move.To.Row, move.To.Col];
             return captured is null ? 0 : PieceValues[captured.Type] - PieceValues[move.Piece.Type] / 20.0;
         });
+    }
+
+    private void StoreTransposition(ulong hash, TranspositionEntry entry)
+    {
+        if (_transpositionTable.Count >= MaxTranspositionEntries) _transpositionTable.Clear();
+        if (!_transpositionTable.TryGetValue(hash, out var current) || entry.Depth >= current.Depth)
+        {
+            _transpositionTable[hash] = entry;
+        }
+    }
+
+    private static bool SameMove(Move left, Move right) => left.From == right.From && left.To == right.To;
+
+    private static ulong ComputeZobristHash(Piece?[,] board, Side turn)
+    {
+        var hash = ZobristTurn[(int)turn];
+        for (var row = 0; row < XiangqiEngine.BoardRows; row++)
+        {
+            for (var col = 0; col < XiangqiEngine.BoardCols; col++)
+            {
+                var piece = board[row, col];
+                if (piece is null) continue;
+                hash ^= ZobristPieces[row, col, (int)piece.Side, (int)piece.Type];
+            }
+        }
+
+        return hash;
+    }
+
+    private static ulong[,,,] CreateZobristPieces()
+    {
+        var values = new ulong[XiangqiEngine.BoardRows, XiangqiEngine.BoardCols, 2, 7];
+        var index = 2;
+        for (var row = 0; row < XiangqiEngine.BoardRows; row++)
+        {
+            for (var col = 0; col < XiangqiEngine.BoardCols; col++)
+            {
+                for (var side = 0; side < 2; side++)
+                {
+                    for (var type = 0; type < 7; type++)
+                    {
+                        values[row, col, side, type] = NextZobristValue(index++);
+                    }
+                }
+            }
+        }
+
+        return values;
+    }
+
+    private static ulong NextZobristValue(int index)
+    {
+        var value = ZobristSeed + (ulong)index * 0x9E3779B97F4A7C15UL;
+        value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
+        value = (value ^ (value >> 27)) * 0x94D049BB133111EBUL;
+        return value ^ (value >> 31);
     }
 
     private double EvaluateBoard(Piece?[,] board, Side perspective, Side aiSide)
@@ -257,4 +383,13 @@ public sealed class XiangqiAiService
             _ => 0
         };
     }
+
+    private enum TranspositionBound
+    {
+        Exact,
+        Lower,
+        Upper
+    }
+
+    private sealed record TranspositionEntry(int Depth, double Score, TranspositionBound Bound, Move? BestMove);
 }
