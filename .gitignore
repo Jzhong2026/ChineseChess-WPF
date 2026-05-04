@@ -7,3 +7,7 @@
 /ChineseChess/ChineseChess/bin/Debug/net10.0-windows
 /ChineseChess/ChineseChess/obj
 *.user
+/ChineseChess/ChineseChess.Core/obj
+/ChineseChess/ChineseChess.Core/bin/Debug/net10.0
+/ChineseChess/ChineseChess.Core.Verification/bin/Debug/net10.0
+/ChineseChess/ChineseChess.Core.Verification/obj
