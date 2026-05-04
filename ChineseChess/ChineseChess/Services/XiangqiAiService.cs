@@ -95,8 +95,7 @@ public sealed class XiangqiAiService
                     ref aborted,
                     ref ttHits,
                     ref ttStores,
-                    ref ttBestMoveHits,
-                    ref ttScoreHits);
+                    ref ttBestMoveHits);
 
                 if (!aborted && score > iterBestScore)
                 {
@@ -133,37 +132,18 @@ public sealed class XiangqiAiService
         ref bool aborted,
         ref int ttHits,
         ref int ttStores,
-        ref int ttBestMoveHits,
-        ref int ttScoreHits)
+        ref int ttBestMoveHits)
     {
         if ((nodes & 0x3f) == 0 && watch.ElapsedMilliseconds >= deadline) aborted = true;
         if (aborted) return 0;
 
-        var alphaOriginal = alpha;
-        var betaOriginal = beta;
         var hash = ComputeZobristHash(board, turn);
         Move? ttBestMove = null;
+        // Score reuse is disabled until repetition/history state is included in TT key.
         if (_transpositionTable.TryGetValue(hash, out var entry))
         {
             ttHits++;
             ttBestMove = entry.BestMove;
-            if (entry.Depth >= depth)
-            {
-                ttScoreHits++;
-                switch (entry.Bound)
-                {
-                    case TranspositionBound.Exact:
-                        return entry.Score;
-                    case TranspositionBound.Lower:
-                        alpha = Math.Max(alpha, entry.Score);
-                        break;
-                    case TranspositionBound.Upper:
-                        beta = Math.Min(beta, entry.Score);
-                        break;
-                }
-
-                if (alpha >= beta) return entry.Score;
-            }
         }
 
         var status = _engine.GetGameStatus(board, turn);
@@ -194,8 +174,7 @@ public sealed class XiangqiAiService
                 ref aborted,
                 ref ttHits,
                 ref ttStores,
-                ref ttBestMoveHits,
-                ref ttScoreHits);
+                ref ttBestMoveHits);
 
             if (score > best)
             {
@@ -209,13 +188,7 @@ public sealed class XiangqiAiService
 
         if (!aborted && best > double.NegativeInfinity)
         {
-            var bound = best <= alphaOriginal
-                ? TranspositionBound.Upper
-                : best >= betaOriginal
-                    ? TranspositionBound.Lower
-                    : TranspositionBound.Exact;
-
-            StoreTransposition(hash, new TranspositionEntry(depth, best, bound, bestMove));
+            StoreTransposition(hash, new TranspositionEntry(depth, bestMove));
             ttStores++;
             if (ttBestMove is not null && bestMove is not null && SameMove(ttBestMove, bestMove)) ttBestMoveHits++;
         }
@@ -384,12 +357,5 @@ public sealed class XiangqiAiService
         };
     }
 
-    private enum TranspositionBound
-    {
-        Exact,
-        Lower,
-        Upper
-    }
-
-    private sealed record TranspositionEntry(int Depth, double Score, TranspositionBound Bound, Move? BestMove);
+    private sealed record TranspositionEntry(int Depth, Move? BestMove);
 }
