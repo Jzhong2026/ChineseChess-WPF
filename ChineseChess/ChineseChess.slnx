@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="ChineseChess.Core/ChineseChess.Core.csproj" />
   <Project Path="ChineseChess.Core.Verification/ChineseChess.Core.Verification.csproj" />
+  <Project Path="ChineseChess.SelfPlay/ChineseChess.SelfPlay.csproj" />
   <Project Path="ChineseChess/ChineseChess.csproj" />
 </Solution>

@@ -11,3 +11,7 @@
 /ChineseChess/ChineseChess.Core/bin/Debug/net10.0
 /ChineseChess/ChineseChess.Core.Verification/bin/Debug/net10.0
 /ChineseChess/ChineseChess.Core.Verification/obj
+/ChineseChess/ChineseChess.SelfPlay/bin/Debug/net10.0
+/ChineseChess/ChineseChess.SelfPlay/obj
+/data/
+*.jsonl
