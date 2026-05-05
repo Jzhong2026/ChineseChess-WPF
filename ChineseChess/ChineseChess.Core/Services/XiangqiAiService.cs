@@ -59,6 +59,7 @@ public sealed class XiangqiAiService
         var ttScoreHits = 0;
         var bestMove = legalMoves[0];
         var bestScore = EvaluateBoard(_engine.ApplyMove(board, bestMove), side, side);
+        var bestMoveScore = bestScore;
         var depthReached = 0;
 
         _transpositionTable.Clear();
@@ -71,6 +72,7 @@ public sealed class XiangqiAiService
             var alpha = double.NegativeInfinity;
             var beta = double.PositiveInfinity;
 
+            var iterRootScores = new List<(Move Move, double Score)>(legalMoves.Count);
             foreach (var move in legalMoves)
             {
                 if (watch.ElapsedMilliseconds >= deadline)
@@ -97,10 +99,14 @@ public sealed class XiangqiAiService
                     ref ttStores,
                     ref ttBestMoveHits);
 
-                if (!aborted && score > iterBestScore)
+                if (!aborted)
                 {
-                    iterBestScore = score;
-                    iterBestMove = move;
+                    iterRootScores.Add((move, score));
+                    if (score > iterBestScore)
+                    {
+                        iterBestScore = score;
+                        iterBestMove = move;
+                    }
                 }
 
                 if (!aborted) alpha = Math.Max(alpha, score);
@@ -108,13 +114,29 @@ public sealed class XiangqiAiService
 
             if (!aborted)
             {
-                bestMove = iterBestMove;
+                bestMove = SelectMoveWithRandomness(iterRootScores, iterBestMove, iterBestScore);
                 bestScore = iterBestScore;
+                bestMoveScore = iterRootScores.First(item => SameMove(item.Move, bestMove)).Score;
                 depthReached = depth;
             }
         }
 
-        return new AiSearchResult(bestMove, new SearchStats(Math.Max(depthReached, 0), nodes, watch.Elapsed.TotalMilliseconds, bestScore, ttHits, ttStores, ttBestMoveHits, ttScoreHits));
+        return new AiSearchResult(bestMove, new SearchStats(Math.Max(depthReached, 0), nodes, watch.Elapsed.TotalMilliseconds, bestMoveScore, ttHits, ttStores, ttBestMoveHits, ttScoreHits));
+    }
+
+    private Move SelectMoveWithRandomness(IReadOnlyList<(Move Move, double Score)> scoredMoves, Move fallbackMove, double bestScore)
+    {
+        if (scoredMoves.Count == 0) return fallbackMove;
+
+        const int topK = 3;
+        const double nearBestWindow = 30;
+        var sorted = scoredMoves.OrderByDescending(item => item.Score).ToList();
+        var minTopKScore = sorted[Math.Min(topK, sorted.Count) - 1].Score;
+        var threshold = Math.Max(bestScore - nearBestWindow, minTopKScore);
+        var candidateMoves = sorted.Where(item => item.Score >= threshold).Select(item => item.Move).ToList();
+
+        if (candidateMoves.Count == 0) return fallbackMove;
+        return candidateMoves[_random.Next(candidateMoves.Count)];
     }
 
     private double Negamax(

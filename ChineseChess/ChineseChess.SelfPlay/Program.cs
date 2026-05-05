@@ -47,6 +47,7 @@ for (var gameId = 1; gameId <= options.Games; gameId++)
             MoveEncoder.Encode(result.Move),
             0,
             result.Stats.BestScore,
+            ToRedPerspectiveScore(result.Stats.BestScore, state.Turn),
             result.Stats.DepthReached,
             result.Stats.Nodes,
             result.Stats.TimeMs));
@@ -54,6 +55,7 @@ for (var gameId = 1; gameId <= options.Games; gameId++)
         state = engine.MakeMove(state, result.Move);
     }
 
+    var unfinished = IsPlaying(state.Status);
     var finalResult = GetRedPerspectiveResult(state.Status);
     if (finalResult == 1) redWins++;
     else if (finalResult == -1) blackWins++;
@@ -61,7 +63,7 @@ for (var gameId = 1; gameId <= options.Games; gameId++)
 
     foreach (var row in rows)
     {
-        await writer.WriteLineAsync(JsonSerializer.Serialize(row with { Result = finalResult }, jsonOptions));
+        await writer.WriteLineAsync(JsonSerializer.Serialize(row with { Result = finalResult, Unfinished = unfinished }, jsonOptions));
     }
 
     totalRows += rows.Count;
@@ -158,7 +160,11 @@ internal sealed record SelfPlayRow(
     int[] LegalMoves,
     int SelectedMove,
     int Result,
-    double SearchScore,
+    double SearchScoreSidePerspective,
+    double SearchScoreRedPerspective,
     int DepthReached,
     int Nodes,
-    double TimeMs);
+    double TimeMs,
+    bool Unfinished = false);
+
+static double ToRedPerspectiveScore(double score, Side side) => side == Side.Red ? score : -score;
