@@ -23,20 +23,26 @@ var redWins = 0;
 var blackWins = 0;
 var draws = 0;
 var totalRows = 0;
+var uniqueSignatures = new HashSet<string>(StringComparer.Ordinal);
+var duplicateGames = 0;
 
 using var writer = new StreamWriter(outputPath, append: false);
 for (var gameId = 1; gameId <= options.Games; gameId++)
 {
     var state = engine.CreateInitialState();
     var rows = new List<SelfPlayRow>();
+    var selectedMoves = new List<int>();
 
     for (var moveIndex = 0; moveIndex < options.MaxMoves && IsPlaying(state.Status); moveIndex++)
     {
         var legalMoves = engine.GetLegalMoves(state.Board, state.Turn, state.History);
         if (legalMoves.Count == 0) break;
 
-        var result = ai.ChooseMove(state.Board, state.Turn, options.Level, state.History, options.TimeMs);
+        var selectionOptions = BuildMoveSelectionOptions(options, moveIndex);
+        var result = ai.ChooseMove(state.Board, state.Turn, options.Level, state.History, options.TimeMs, selectionOptions);
         if (result.Move is null) break;
+
+        var selectedMove = MoveEncoder.Encode(result.Move);
 
         rows.Add(new SelfPlayRow(
             gameId,
@@ -44,7 +50,7 @@ for (var gameId = 1; gameId <= options.Games; gameId++)
             state.Turn.ToString(),
             BoardEncoder.Encode(state.Board),
             legalMoves.Select(MoveEncoder.Encode).ToArray(),
-            MoveEncoder.Encode(result.Move),
+            selectedMove,
             0,
             result.Stats.BestScore,
             ToRedPerspectiveScore(result.Stats.BestScore, state.Turn),
@@ -52,8 +58,12 @@ for (var gameId = 1; gameId <= options.Games; gameId++)
             result.Stats.Nodes,
             result.Stats.TimeMs));
 
+        selectedMoves.Add(selectedMove);
         state = engine.MakeMove(state, result.Move);
     }
+
+    var signature = string.Join(',', selectedMoves);
+    if (!uniqueSignatures.Add(signature)) duplicateGames++;
 
     var unfinished = IsPlaying(state.Status);
     var finalResult = GetRedPerspectiveResult(state.Status);
@@ -63,7 +73,9 @@ for (var gameId = 1; gameId <= options.Games; gameId++)
 
     foreach (var row in rows)
     {
-        await writer.WriteLineAsync(JsonSerializer.Serialize(row with { Result = finalResult, Unfinished = unfinished }, jsonOptions));
+        var finalizedRow = row with { Result = finalResult, Unfinished = unfinished };
+        ValidateRow(finalizedRow);
+        await writer.WriteLineAsync(JsonSerializer.Serialize(finalizedRow, jsonOptions));
     }
 
     totalRows += rows.Count;
@@ -76,7 +88,29 @@ Console.WriteLine($"Red wins: {redWins}");
 Console.WriteLine($"Black wins: {blackWins}");
 Console.WriteLine($"Draws: {draws}");
 Console.WriteLine($"Total rows: {totalRows}");
+Console.WriteLine($"Duplicate games: {duplicateGames}");
+Console.WriteLine($"Unique signatures: {uniqueSignatures.Count}");
 Console.WriteLine($"Output: {outputPath}");
+
+static MoveSelectionOptions BuildMoveSelectionOptions(SelfPlayOptions options, int moveIndex)
+{
+    var openingRandom = moveIndex < options.RandomOpeningPlies;
+    var enableRandomSelection = openingRandom || (options.TopK > 1 || options.NearBestWindow > 0);
+    return new MoveSelectionOptions(
+        EnableRandomSelection: enableRandomSelection,
+        TopK: options.TopK,
+        NearBestWindow: options.NearBestWindow,
+        Seed: options.Seed,
+        RandomOpeningPlies: options.RandomOpeningPlies);
+}
+
+static void ValidateRow(SelfPlayRow row)
+{
+    if (row.BoardEncoding.Length != 1260) throw new InvalidOperationException($"Invalid BoardEncoding length: {row.BoardEncoding.Length}");
+    if (row.LegalMoves.Length == 0) throw new InvalidOperationException("LegalMoves must not be empty.");
+    if (!row.LegalMoves.Contains(row.SelectedMove)) throw new InvalidOperationException($"SelectedMove {row.SelectedMove} not found in LegalMoves.");
+    if (row.SelectedMove is < 0 or > 8099) throw new InvalidOperationException($"SelectedMove out of range: {row.SelectedMove}");
+}
 
 static bool IsPlaying(GameStatus status) => status is GameStatus.Playing or GameStatus.RedCheck or GameStatus.BlackCheck;
 
@@ -94,7 +128,7 @@ static string FormatResult(int result) => result switch
     _ => "Draw/unfinished"
 };
 
-internal sealed record SelfPlayOptions(int Games, string OutputPath, int Level, int TimeMs, int MaxMoves)
+internal sealed record SelfPlayOptions(int Games, string OutputPath, int Level, int TimeMs, int MaxMoves, int TopK, double NearBestWindow, int RandomOpeningPlies, int? Seed)
 {
     public static SelfPlayOptions Parse(string[] args)
     {
@@ -104,7 +138,11 @@ internal sealed record SelfPlayOptions(int Games, string OutputPath, int Level, 
             ["--out"] = "data/selfplay/games.jsonl",
             ["--level"] = "4",
             ["--timeMs"] = "300",
-            ["--maxMoves"] = "300"
+            ["--maxMoves"] = "300",
+            ["--topK"] = "1",
+            ["--nearBestWindow"] = "0",
+            ["--randomOpeningPlies"] = "0",
+            ["--seed"] = string.Empty
         };
 
         for (var i = 0; i < args.Length; i++)
@@ -128,7 +166,11 @@ internal sealed record SelfPlayOptions(int Games, string OutputPath, int Level, 
             values["--out"],
             ParseRangedInt(values["--level"], "--level", 1, 4),
             ParsePositiveInt(values["--timeMs"], "--timeMs"),
-            ParsePositiveInt(values["--maxMoves"], "--maxMoves"));
+            ParsePositiveInt(values["--maxMoves"], "--maxMoves"),
+            ParsePositiveInt(values["--topK"], "--topK"),
+            ParseNonNegativeDouble(values["--nearBestWindow"], "--nearBestWindow"),
+            ParseNonNegativeInt(values["--randomOpeningPlies"], "--randomOpeningPlies"),
+            ParseOptionalInt(values["--seed"], "--seed"));
     }
 
     private static int ParsePositiveInt(string value, string name)
@@ -146,6 +188,37 @@ internal sealed record SelfPlayOptions(int Games, string OutputPath, int Level, 
         if (!int.TryParse(value, out var parsed) || parsed < min || parsed > max)
         {
             throw new ArgumentException($"{name} must be an integer from {min} to {max}.");
+        }
+
+        return parsed;
+    }
+
+    private static int ParseNonNegativeInt(string value, string name)
+    {
+        if (!int.TryParse(value, out var parsed) || parsed < 0)
+        {
+            throw new ArgumentException($"{name} must be a non-negative integer.");
+        }
+
+        return parsed;
+    }
+
+    private static double ParseNonNegativeDouble(string value, string name)
+    {
+        if (!double.TryParse(value, out var parsed) || parsed < 0)
+        {
+            throw new ArgumentException($"{name} must be a non-negative number.");
+        }
+
+        return parsed;
+    }
+
+    private static int? ParseOptionalInt(string value, string name)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (!int.TryParse(value, out var parsed))
+        {
+            throw new ArgumentException($"{name} must be an integer when provided.");
         }
 
         return parsed;

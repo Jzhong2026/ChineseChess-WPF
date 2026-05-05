@@ -7,6 +7,7 @@ public sealed class XiangqiAiService
 {
     private readonly XiangqiEngine _engine;
     private readonly Random _random = new();
+    private readonly Dictionary<int, Random> _seededRandoms = new();
     private readonly Dictionary<ulong, TranspositionEntry> _transpositionTable = new();
 
     private const ulong ZobristSeed = 0x9E3779B97F4A7C15UL;
@@ -30,9 +31,10 @@ public sealed class XiangqiAiService
         _engine = engine;
     }
 
-    public AiSearchResult ChooseMove(Piece?[,] board, Side side, int level, IReadOnlyList<Move> history, int timeLimitMs)
+    public AiSearchResult ChooseMove(Piece?[,] board, Side side, int level, IReadOnlyList<Move> history, int timeLimitMs, MoveSelectionOptions? selectionOptions = null)
     {
         var watch = Stopwatch.StartNew();
+        var effectiveSelectionOptions = selectionOptions ?? MoveSelectionOptions.Deterministic;
         var legalMoves = OrderMoves(board, _engine.GetLegalMoves(board, side, history)).ToList();
         if (legalMoves.Count == 0)
         {
@@ -42,7 +44,10 @@ public sealed class XiangqiAiService
         level = Math.Clamp(level, 1, 4);
         if (level == 1)
         {
-            return new AiSearchResult(legalMoves[_random.Next(legalMoves.Count)], new SearchStats(1, legalMoves.Count, watch.Elapsed.TotalMilliseconds, 0));
+            var selectedLevelOneMove = effectiveSelectionOptions.EnableRandomSelection
+                ? legalMoves[GetRandom(effectiveSelectionOptions).Next(legalMoves.Count)]
+                : legalMoves[0];
+            return new AiSearchResult(selectedLevelOneMove, new SearchStats(1, legalMoves.Count, watch.Elapsed.TotalMilliseconds, 0));
         }
 
         if (level == 2)
@@ -114,7 +119,7 @@ public sealed class XiangqiAiService
 
             if (!aborted)
             {
-                bestMove = SelectMoveWithRandomness(iterRootScores, iterBestMove, iterBestScore);
+                bestMove = SelectMove(iterRootScores, iterBestMove, iterBestScore, effectiveSelectionOptions);
                 bestScore = iterBestScore;
                 bestMoveScore = iterRootScores.First(item => SameMove(item.Move, bestMove)).Score;
                 depthReached = depth;
@@ -124,19 +129,30 @@ public sealed class XiangqiAiService
         return new AiSearchResult(bestMove, new SearchStats(Math.Max(depthReached, 0), nodes, watch.Elapsed.TotalMilliseconds, bestMoveScore, ttHits, ttStores, ttBestMoveHits, ttScoreHits));
     }
 
-    private Move SelectMoveWithRandomness(IReadOnlyList<(Move Move, double Score)> scoredMoves, Move fallbackMove, double bestScore)
+    private Move SelectMove(IReadOnlyList<(Move Move, double Score)> scoredMoves, Move fallbackMove, double bestScore, MoveSelectionOptions options)
     {
         if (scoredMoves.Count == 0) return fallbackMove;
+        if (!options.EnableRandomSelection) return fallbackMove;
 
-        const int topK = 3;
-        const double nearBestWindow = 30;
         var sorted = scoredMoves.OrderByDescending(item => item.Score).ToList();
-        var minTopKScore = sorted[Math.Min(topK, sorted.Count) - 1].Score;
+        var topK = Math.Clamp(options.TopK, 1, sorted.Count);
+        var nearBestWindow = Math.Max(0, options.NearBestWindow);
+        var minTopKScore = sorted[topK - 1].Score;
         var threshold = Math.Max(bestScore - nearBestWindow, minTopKScore);
         var candidateMoves = sorted.Where(item => item.Score >= threshold).Select(item => item.Move).ToList();
 
         if (candidateMoves.Count == 0) return fallbackMove;
-        return candidateMoves[_random.Next(candidateMoves.Count)];
+        return candidateMoves[GetRandom(options).Next(candidateMoves.Count)];
+    }
+
+    private Random GetRandom(MoveSelectionOptions options)
+    {
+        if (!options.Seed.HasValue) return _random;
+        if (_seededRandoms.TryGetValue(options.Seed.Value, out var seededRandom)) return seededRandom;
+
+        seededRandom = new Random(options.Seed.Value);
+        _seededRandoms[options.Seed.Value] = seededRandom;
+        return seededRandom;
     }
 
     private double Negamax(
