@@ -75,7 +75,7 @@
             <Setter Property="Visibility" Value="{Binding HasPiece, Converter={StaticResource BoolToVisibility}}" />
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect BlurRadius="13" ShadowDepth="5" Opacity="0.28" />
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="0" Opacity="0.30" Color="#000000" />
                 </Setter.Value>
             </Setter>
             <Style.Triggers>
