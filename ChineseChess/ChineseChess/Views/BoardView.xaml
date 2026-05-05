@@ -204,6 +204,22 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <Border HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Padding="32,14"
+                        CornerRadius="12"
+                        Background="#DDEA4335"
+                        BorderBrush="#FFEFD6D2"
+                        BorderThickness="3"
+                        Visibility="{Binding ShowGameResult, Converter={StaticResource BoolToVisibility}}"
+                        IsHitTestVisible="False">
+                    <TextBlock Text="{Binding GameResultText}"
+                               FontFamily="KaiTi, SimSun, Microsoft YaHei UI"
+                               FontSize="52"
+                               FontWeight="Bold"
+                               Foreground="#FFFCEEEB" />
+                </Border>
             </Grid>
         </Border>
     </Viewbox>
