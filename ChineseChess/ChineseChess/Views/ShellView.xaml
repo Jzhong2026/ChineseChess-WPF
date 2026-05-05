@@ -8,23 +8,96 @@
         MinWidth="960"
         MinHeight="680"
         Background="#E7E1D2"
-        FontFamily="Microsoft YaHei UI, Segoe UI">
+        FontFamily="Microsoft YaHei UI, Segoe UI"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        AllowsTransparency="False">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <Style x:Key="TitleBarButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#4E4940" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#D8CFBC" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="#C9BFA9" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
-    <Grid Margin="28">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="360" />
-        </Grid.ColumnDefinitions>
+    <Border BorderBrush="#BCAf96" BorderThickness="1" Background="#E7E1D2">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-        <ContentControl x:Name="Board"
-                        Grid.Column="0"
-                        Margin="0,0,28,0"
-                        cal:View.Model="{Binding Board}" />
-        <ContentControl x:Name="SidePanel"
-                        Grid.Column="1"
-                        cal:View.Model="{Binding SidePanel}" />
-    </Grid>
+            <Grid Grid.Row="0" Background="#E0D8C8" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Margin="14,0,0,0"
+                           VerticalAlignment="Center"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="#4E4940"
+                           Text="{Binding DisplayName}" />
+
+                <Button Grid.Column="1"
+                        Style="{StaticResource TitleBarButtonStyle}"
+                        Content="—"
+                        Click="MinimizeButton_Click" />
+                <Button Grid.Column="2"
+                        Style="{StaticResource TitleBarButtonStyle}"
+                        Content="□"
+                        Click="MaximizeRestoreButton_Click" />
+                <Button Grid.Column="3"
+                        Style="{StaticResource TitleBarButtonStyle}"
+                        Content="✕"
+                        Foreground="#7A2E2E"
+                        Click="CloseButton_Click" />
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="28">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="360" />
+                </Grid.ColumnDefinitions>
+
+                <ContentControl x:Name="Board"
+                                Grid.Column="0"
+                                Margin="0,0,28,0"
+                                cal:View.Model="{Binding Board}" />
+                <ContentControl x:Name="SidePanel"
+                                Grid.Column="1"
+                                cal:View.Model="{Binding SidePanel}" />
+            </Grid>
+        </Grid>
+    </Border>
 </Window>
