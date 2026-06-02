@@ -1,148 +1,238 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ChineseChess.Encoding;
 using ChineseChess.Models;
 using ChineseChess.Services;
 
-internal static class Program
+var options = SelfPlayOptions.Parse(args);
+var outputPath = Path.GetFullPath(options.OutputPath);
+var outputDirectory = Path.GetDirectoryName(outputPath);
+if (!string.IsNullOrWhiteSpace(outputDirectory))
 {
-    private static async Task Main(string[] args)
-    {
-        var options = SelfPlayOptions.Parse(args);
-        var outputPath = Path.GetFullPath(options.OutputPath);
-        var outputDirectory = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrWhiteSpace(outputDirectory))
-        {
-            Directory.CreateDirectory(outputDirectory);
-        }
-
-        var jsonOptions = new JsonSerializerOptions
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.Never
-        };
-
-        var engine = new XiangqiEngine();
-        var ai = new XiangqiAiService(engine);
-        var redWins = 0;
-        var blackWins = 0;
-        var draws = 0;
-        var totalRows = 0;
-        var uniqueSignatures = new HashSet<string>(StringComparer.Ordinal);
-        var duplicateGames = 0;
-        var random = options.Seed.HasValue ? new Random(options.Seed.Value) : new Random();
-
-        using var writer = new StreamWriter(outputPath, append: false);
-        for (var gameId = 1; gameId <= options.Games; gameId++)
-        {
-            var state = engine.CreateInitialState();
-            var rows = new List<SelfPlayRow>();
-            var selectedMoves = new List<int>();
-
-            for (var moveIndex = 0; moveIndex < options.MaxMoves && IsPlaying(state.Status); moveIndex++)
-            {
-                var legalMoves = engine.GetLegalMoves(state.Board, state.Turn, state.History);
-                if (legalMoves.Count == 0) break;
-
-                var forceRandomMove = moveIndex < options.RandomOpeningPlies || random.NextDouble() < options.RandomMoveProbability;
-                var result = forceRandomMove
-                    ? PickRandomMove(legalMoves, random)
-                    : ai.ChooseMove(state.Board, state.Turn, options.Level, state.History, options.TimeMs, BuildMoveSelectionOptions(options));
-
-                if (result.Move is null) break;
-                var selectedMove = MoveEncoder.Encode(result.Move);
-
-                rows.Add(new SelfPlayRow(
-                    gameId,
-                    moveIndex,
-                    state.Turn.ToString(),
-                    BoardEncoder.Encode(state.Board),
-                    legalMoves.Select(MoveEncoder.Encode).ToArray(),
-                    selectedMove,
-                    0,
-                    result.Stats.BestScore,
-                    ToRedPerspectiveScore(result.Stats.BestScore, state.Turn),
-                    result.Stats.DepthReached,
-                    result.Stats.Nodes,
-                    result.Stats.TimeMs));
-
-                selectedMoves.Add(selectedMove);
-                state = engine.MakeMove(state, result.Move);
-            }
-
-            var signature = string.Join(',', selectedMoves);
-            if (!uniqueSignatures.Add(signature)) duplicateGames++;
-
-            var unfinished = IsPlaying(state.Status);
-            var finalResult = GetRedPerspectiveResult(state.Status);
-            if (finalResult == 1) redWins++;
-            else if (finalResult == -1) blackWins++;
-            else draws++;
-
-            foreach (var row in rows)
-            {
-                var finalizedRow = row with { Result = finalResult, Unfinished = unfinished };
-                ValidateRow(finalizedRow);
-                await writer.WriteLineAsync(JsonSerializer.Serialize(finalizedRow, jsonOptions));
-            }
-
-            totalRows += rows.Count;
-            Console.WriteLine($"Game {gameId}/{options.Games}: {FormatResult(finalResult)}, rows {rows.Count}");
-        }
-
-        Console.WriteLine("Self-play complete.");
-        Console.WriteLine($"Games played: {options.Games}");
-        Console.WriteLine($"Red wins: {redWins}");
-        Console.WriteLine($"Black wins: {blackWins}");
-        Console.WriteLine($"Draws: {draws}");
-        Console.WriteLine($"Total rows: {totalRows}");
-        Console.WriteLine($"Duplicate games: {duplicateGames}");
-        Console.WriteLine($"Unique signatures: {uniqueSignatures.Count}");
-        Console.WriteLine($"Output: {outputPath}");
-    }
-
-    private static AiSearchResult PickRandomMove(IReadOnlyList<Move> legalMoves, Random random)
-    {
-        var move = legalMoves[random.Next(legalMoves.Count)];
-        return new AiSearchResult(move, new SearchStats(0, legalMoves.Count, 0, 0));
-    }
-
-    private static MoveSelectionOptions BuildMoveSelectionOptions(SelfPlayOptions options)
-    {
-        var enableRandomSelection = options.TopK > 1 || options.NearBestWindow > 0;
-        return new MoveSelectionOptions(
-            EnableRandomSelection: enableRandomSelection,
-            TopK: options.TopK,
-            NearBestWindow: options.NearBestWindow,
-            Seed: options.Seed,
-            RandomOpeningPlies: options.RandomOpeningPlies);
-    }
-
-    private static void ValidateRow(SelfPlayRow row)
-    {
-        if (row.BoardEncoding.Length != 1260) throw new InvalidOperationException($"Invalid BoardEncoding length: {row.BoardEncoding.Length}");
-        if (row.LegalMoves.Length == 0) throw new InvalidOperationException("LegalMoves must not be empty.");
-        if (!row.LegalMoves.Contains(row.SelectedMove)) throw new InvalidOperationException($"SelectedMove {row.SelectedMove} not found in LegalMoves.");
-        if (row.SelectedMove is < 0 or > 8099) throw new InvalidOperationException($"SelectedMove out of range: {row.SelectedMove}");
-    }
-
-    private static bool IsPlaying(GameStatus status) => status is GameStatus.Playing or GameStatus.RedCheck or GameStatus.BlackCheck;
-
-    private static int GetRedPerspectiveResult(GameStatus status) => status switch
-    {
-        GameStatus.RedWins => 1,
-        GameStatus.BlackWins => -1,
-        _ => 0
-    };
-
-    private static string FormatResult(int result) => result switch
-    {
-        1 => "Red win",
-        -1 => "Black win",
-        _ => "Draw/unfinished"
-    };
-
-    private static double ToRedPerspectiveScore(double score, Side side) => side == Side.Red ? score : -score;
+    Directory.CreateDirectory(outputDirectory);
 }
+
+var jsonOptions = new JsonSerializerOptions
+{
+    DefaultIgnoreCondition = JsonIgnoreCondition.Never
+};
+
+var engine = new XiangqiEngine();
+var ai = new XiangqiAiService(engine);
+var redWins = 0;
+var blackWins = 0;
+var draws = 0;
+var unfinishedGames = 0;
+var adjudicatedGames = 0;
+var skippedDrawGames = 0;
+var totalRows = 0;
+var uniqueSignatures = new HashSet<string>(StringComparer.Ordinal);
+var duplicateGames = 0;
+
+using var writer = new StreamWriter(outputPath, append: false);
+for (var gameId = 1; gameId <= options.Games; gameId++)
+{
+    var state = engine.CreateInitialState();
+    var rows = new List<SelfPlayRow>();
+    var selectedMoves = new List<int>();
+    var noCapturePlies = 0;
+    var adjudicatedResult = 0;
+    var endReason = "unfinished";
+
+    for (var moveIndex = 0; moveIndex < options.MaxMoves && IsPlaying(state.Status); moveIndex++)
+    {
+        var legalMoves = engine.GetLegalMoves(state.Board, state.Turn, state.History);
+        if (legalMoves.Count == 0) break;
+
+        var selectionOptions = BuildMoveSelectionOptions(options, moveIndex);
+        var result = ai.ChooseMove(state.Board, state.Turn, options.Level, state.History, options.TimeMs, selectionOptions);
+        if (result.Move is null) break;
+
+        var selectedMove = MoveEncoder.Encode(result.Move);
+
+        rows.Add(new SelfPlayRow(
+            gameId,
+            moveIndex,
+            state.Turn.ToString(),
+            BoardEncoder.Encode(state.Board),
+            legalMoves.Select(MoveEncoder.Encode).ToArray(),
+            selectedMove,
+            0,
+            result.Stats.BestScore,
+            ToRedPerspectiveScore(result.Stats.BestScore, state.Turn),
+            result.Stats.DepthReached,
+            result.Stats.Nodes,
+            result.Stats.TimeMs));
+
+        selectedMoves.Add(selectedMove);
+        var captured = state.Board[result.Move.To.Row, result.Move.To.Col];
+        state = engine.MakeMove(state, result.Move);
+        noCapturePlies = captured is null ? noCapturePlies + 1 : 0;
+
+        if (TryAdjudicateByMaterial(state, moveIndex + 1, noCapturePlies, options, out adjudicatedResult))
+        {
+            endReason = "material-adjudication";
+            break;
+        }
+    }
+
+    var signature = string.Join(',', selectedMoves);
+    if (!uniqueSignatures.Add(signature)) duplicateGames++;
+
+    var finalResult = adjudicatedResult != 0 ? adjudicatedResult : GetRedPerspectiveResult(state.Status);
+    var unfinished = false;
+    if (adjudicatedResult != 0)
+    {
+        adjudicatedGames++;
+    }
+    else if (IsPlaying(state.Status))
+    {
+        unfinished = true;
+        endReason = rows.Count >= options.MaxMoves ? "max-moves" : "interrupted";
+        if (options.AdjudicateAtMaxMoves && TryAdjudicateAtMaxMoves(state, rows.Count, options, out finalResult))
+        {
+            unfinished = false;
+            adjudicatedGames++;
+            endReason = "max-moves-material-adjudication";
+        }
+
+        if (unfinished) unfinishedGames++;
+    }
+    else
+    {
+        endReason = state.Status.ToString();
+    }
+
+    if (finalResult == 1) redWins++;
+    else if (finalResult == -1) blackWins++;
+    else draws++;
+
+    if (options.SkipDraws && finalResult == 0)
+    {
+        skippedDrawGames++;
+        Console.WriteLine($"Game {gameId}/{options.Games}: skipped {FormatResult(finalResult)} ({endReason}), rows {rows.Count}");
+        continue;
+    }
+
+    foreach (var row in rows)
+    {
+        var finalizedRow = row with { Result = finalResult, Unfinished = unfinished, EndReason = endReason };
+        ValidateRow(finalizedRow);
+        await writer.WriteLineAsync(JsonSerializer.Serialize(finalizedRow, jsonOptions));
+    }
+
+    totalRows += rows.Count;
+    Console.WriteLine($"Game {gameId}/{options.Games}: {FormatResult(finalResult)} ({endReason}), rows {rows.Count}");
+}
+
+Console.WriteLine("Self-play complete.");
+Console.WriteLine($"Games requested: {options.Games}");
+Console.WriteLine($"Red wins: {redWins}");
+Console.WriteLine($"Black wins: {blackWins}");
+Console.WriteLine($"Draws: {draws}");
+Console.WriteLine($"Unfinished games: {unfinishedGames}");
+Console.WriteLine($"Adjudicated games: {adjudicatedGames}");
+Console.WriteLine($"Skipped draw games: {skippedDrawGames}");
+Console.WriteLine($"Total rows written: {totalRows}");
+Console.WriteLine($"Duplicate games: {duplicateGames}");
+Console.WriteLine($"Unique signatures: {uniqueSignatures.Count}");
+Console.WriteLine($"Output: {outputPath}");
+
+static MoveSelectionOptions BuildMoveSelectionOptions(SelfPlayOptions options, int moveIndex)
+{
+    var openingRandom = moveIndex < options.RandomOpeningPlies;
+    var enableRandomSelection = openingRandom || (options.TopK > 1 || options.NearBestWindow > 0);
+    return new MoveSelectionOptions(
+        EnableRandomSelection: enableRandomSelection,
+        TopK: openingRandom ? Math.Max(options.TopK, options.OpeningTopK) : options.TopK,
+        NearBestWindow: openingRandom ? Math.Max(options.NearBestWindow, options.OpeningNearBestWindow) : options.NearBestWindow,
+        Seed: options.Seed,
+        RandomOpeningPlies: options.RandomOpeningPlies);
+}
+
+static bool TryAdjudicateByMaterial(GameState state, int playedPlies, int noCapturePlies, SelfPlayOptions options, out int result)
+{
+    result = 0;
+    if (!options.EnableMaterialAdjudication) return false;
+    if (playedPlies < options.AdjudicateAfterMoves) return false;
+    if (noCapturePlies < options.AdjudicateNoCapturePlies) return false;
+    return TryAdjudicateMaterialMargin(state.Board, options.AdjudicateMaterialMargin, out result);
+}
+
+static bool TryAdjudicateAtMaxMoves(GameState state, int playedPlies, SelfPlayOptions options, out int result)
+{
+    result = 0;
+    if (!options.AdjudicateAtMaxMoves) return false;
+    if (playedPlies < options.MaxMoves) return false;
+    return TryAdjudicateMaterialMargin(state.Board, options.AdjudicateMaterialMargin, out result);
+}
+
+static bool TryAdjudicateMaterialMargin(Piece?[,] board, int threshold, out int result)
+{
+    var margin = MaterialScore(board);
+    if (Math.Abs(margin) < threshold)
+    {
+        result = 0;
+        return false;
+    }
+
+    result = margin > 0 ? 1 : -1;
+    return true;
+}
+
+static int MaterialScore(Piece?[,] board)
+{
+    var score = 0;
+    for (var row = 0; row < XiangqiEngine.BoardRows; row++)
+    {
+        for (var col = 0; col < XiangqiEngine.BoardCols; col++)
+        {
+            var piece = board[row, col];
+            if (piece is null) continue;
+            var value = PieceMaterialValue(piece.Type);
+            score += piece.Side == Side.Red ? value : -value;
+        }
+    }
+
+    return score;
+}
+
+static int PieceMaterialValue(PieceType type) => type switch
+{
+    PieceType.General => 10000,
+    PieceType.Rook => 900,
+    PieceType.Cannon => 450,
+    PieceType.Horse => 400,
+    PieceType.Elephant => 200,
+    PieceType.Advisor => 200,
+    PieceType.Soldier => 120,
+    _ => 0
+};
+
+static void ValidateRow(SelfPlayRow row)
+{
+    if (row.BoardEncoding.Length != 1260) throw new InvalidOperationException($"Invalid BoardEncoding length: {row.BoardEncoding.Length}");
+    if (row.LegalMoves.Length == 0) throw new InvalidOperationException("LegalMoves must not be empty.");
+    if (!row.LegalMoves.Contains(row.SelectedMove)) throw new InvalidOperationException($"SelectedMove {row.SelectedMove} not found in LegalMoves.");
+    if (row.SelectedMove is < 0 or > 8099) throw new InvalidOperationException($"SelectedMove out of range: {row.SelectedMove}");
+}
+
+static bool IsPlaying(GameStatus status) => status is GameStatus.Playing or GameStatus.RedCheck or GameStatus.BlackCheck;
+
+static int GetRedPerspectiveResult(GameStatus status) => status switch
+{
+    GameStatus.RedWins => 1,
+    GameStatus.BlackWins => -1,
+    _ => 0
+};
+
+static string FormatResult(int result) => result switch
+{
+    1 => "Red win",
+    -1 => "Black win",
+    _ => "Draw/unfinished"
+};
 
 internal sealed record SelfPlayOptions(
     int Games,
@@ -153,8 +243,15 @@ internal sealed record SelfPlayOptions(
     int TopK,
     double NearBestWindow,
     int RandomOpeningPlies,
-    double RandomMoveProbability,
-    int? Seed)
+    int OpeningTopK,
+    double OpeningNearBestWindow,
+    int? Seed,
+    bool EnableMaterialAdjudication,
+    int AdjudicateAfterMoves,
+    int AdjudicateNoCapturePlies,
+    int AdjudicateMaterialMargin,
+    bool AdjudicateAtMaxMoves,
+    bool SkipDraws)
 {
     public static SelfPlayOptions Parse(string[] args)
     {
@@ -164,12 +261,19 @@ internal sealed record SelfPlayOptions(
             ["--out"] = "data/selfplay/games.jsonl",
             ["--level"] = "4",
             ["--timeMs"] = "300",
-            ["--maxMoves"] = "300",
-            ["--topK"] = "1",
-            ["--nearBestWindow"] = "0",
-            ["--randomOpeningPlies"] = "0",
-            ["--randomMoveProbability"] = "0",
-            ["--seed"] = string.Empty
+            ["--maxMoves"] = "220",
+            ["--topK"] = "2",
+            ["--nearBestWindow"] = "80",
+            ["--randomOpeningPlies"] = "12",
+            ["--openingTopK"] = "6",
+            ["--openingNearBestWindow"] = "180",
+            ["--seed"] = string.Empty,
+            ["--materialAdjudication"] = "true",
+            ["--adjudicateAfterMoves"] = "120",
+            ["--adjudicateNoCapturePlies"] = "60",
+            ["--adjudicateMaterialMargin"] = "450",
+            ["--adjudicateAtMaxMoves"] = "true",
+            ["--skipDraws"] = "false"
         };
 
         for (var i = 0; i < args.Length; i++)
@@ -197,8 +301,15 @@ internal sealed record SelfPlayOptions(
             ParsePositiveInt(values["--topK"], "--topK"),
             ParseNonNegativeDouble(values["--nearBestWindow"], "--nearBestWindow"),
             ParseNonNegativeInt(values["--randomOpeningPlies"], "--randomOpeningPlies"),
-            ParseProbability(values["--randomMoveProbability"], "--randomMoveProbability"),
-            ParseOptionalInt(values["--seed"], "--seed"));
+            ParsePositiveInt(values["--openingTopK"], "--openingTopK"),
+            ParseNonNegativeDouble(values["--openingNearBestWindow"], "--openingNearBestWindow"),
+            ParseOptionalInt(values["--seed"], "--seed"),
+            ParseBool(values["--materialAdjudication"], "--materialAdjudication"),
+            ParsePositiveInt(values["--adjudicateAfterMoves"], "--adjudicateAfterMoves"),
+            ParsePositiveInt(values["--adjudicateNoCapturePlies"], "--adjudicateNoCapturePlies"),
+            ParsePositiveInt(values["--adjudicateMaterialMargin"], "--adjudicateMaterialMargin"),
+            ParseBool(values["--adjudicateAtMaxMoves"], "--adjudicateAtMaxMoves"),
+            ParseBool(values["--skipDraws"], "--skipDraws"));
     }
 
     private static int ParsePositiveInt(string value, string name)
@@ -233,19 +344,9 @@ internal sealed record SelfPlayOptions(
 
     private static double ParseNonNegativeDouble(string value, string name)
     {
-        if (!double.TryParse(value, out var parsed) || parsed < 0)
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
         {
             throw new ArgumentException($"{name} must be a non-negative number.");
-        }
-
-        return parsed;
-    }
-
-    private static double ParseProbability(string value, string name)
-    {
-        if (!double.TryParse(value, out var parsed) || parsed < 0 || parsed > 1)
-        {
-            throw new ArgumentException($"{name} must be a number from 0 to 1.");
         }
 
         return parsed;
@@ -257,6 +358,16 @@ internal sealed record SelfPlayOptions(
         if (!int.TryParse(value, out var parsed))
         {
             throw new ArgumentException($"{name} must be an integer when provided.");
+        }
+
+        return parsed;
+    }
+
+    private static bool ParseBool(string value, string name)
+    {
+        if (!bool.TryParse(value, out var parsed))
+        {
+            throw new ArgumentException($"{name} must be true or false.");
         }
 
         return parsed;
@@ -276,4 +387,7 @@ internal sealed record SelfPlayRow(
     int DepthReached,
     int Nodes,
     double TimeMs,
-    bool Unfinished = false);
+    bool Unfinished = false,
+    string EndReason = "unfinished");
+
+static double ToRedPerspectiveScore(double score, Side side) => side == Side.Red ? score : -score;
