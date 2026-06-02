@@ -26,104 +26,142 @@ var draws = 0;
 var unfinishedGames = 0;
 var adjudicatedGames = 0;
 var skippedDrawGames = 0;
+var skippedUnfinishedGames = 0;
 var totalRows = 0;
 var uniqueSignatures = new HashSet<string>(StringComparer.Ordinal);
 var duplicateGames = 0;
+var writePath = options.AtomicOutput ? GetAtomicWritePath(outputPath) : outputPath;
 
-using var writer = new StreamWriter(outputPath, append: false);
-for (var gameId = 1; gameId <= options.Games; gameId++)
+if (options.AtomicOutput && File.Exists(writePath))
 {
-    var state = engine.CreateInitialState();
-    var rows = new List<SelfPlayRow>();
-    var selectedMoves = new List<int>();
-    var noCapturePlies = 0;
-    var adjudicatedResult = 0;
-    var endReason = "unfinished";
+    File.Delete(writePath);
+}
 
-    for (var moveIndex = 0; moveIndex < options.MaxMoves && IsPlaying(state.Status); moveIndex++)
+var writer = new StreamWriter(writePath, append: false);
+try
+{
+    for (var gameId = 1; gameId <= options.Games; gameId++)
     {
-        var legalMoves = engine.GetLegalMoves(state.Board, state.Turn, state.History);
-        if (legalMoves.Count == 0) break;
+        var state = engine.CreateInitialState();
+        var rows = new List<SelfPlayRow>();
+        var selectedMoves = new List<int>();
+        var noCapturePlies = 0;
+        var adjudicatedResult = 0;
+        var endReason = "unfinished";
 
-        var selectionOptions = BuildMoveSelectionOptions(options, moveIndex);
-        var result = ai.ChooseMove(state.Board, state.Turn, options.Level, state.History, options.TimeMs, selectionOptions);
-        if (result.Move is null) break;
-
-        var selectedMove = MoveEncoder.Encode(result.Move);
-
-        rows.Add(new SelfPlayRow(
-            gameId,
-            moveIndex,
-            state.Turn.ToString(),
-            BoardEncoder.Encode(state.Board),
-            legalMoves.Select(MoveEncoder.Encode).ToArray(),
-            selectedMove,
-            0,
-            result.Stats.BestScore,
-            ToRedPerspectiveScore(result.Stats.BestScore, state.Turn),
-            result.Stats.DepthReached,
-            result.Stats.Nodes,
-            result.Stats.TimeMs));
-
-        selectedMoves.Add(selectedMove);
-        var captured = state.Board[result.Move.To.Row, result.Move.To.Col];
-        state = engine.MakeMove(state, result.Move);
-        noCapturePlies = captured is null ? noCapturePlies + 1 : 0;
-
-        if (TryAdjudicateByMaterial(state, moveIndex + 1, noCapturePlies, options, out adjudicatedResult))
+        for (var moveIndex = 0; moveIndex < options.MaxMoves && IsPlaying(state.Status); moveIndex++)
         {
-            endReason = "material-adjudication";
-            break;
+            var legalMoves = engine.GetLegalMoves(state.Board, state.Turn, state.History);
+            if (legalMoves.Count == 0) break;
+
+            var selectionOptions = BuildMoveSelectionOptions(options, moveIndex);
+            var result = ai.ChooseMove(state.Board, state.Turn, options.Level, state.History, options.TimeMs, selectionOptions);
+            if (result.Move is null) break;
+
+            var selectedMove = MoveEncoder.Encode(result.Move);
+
+            rows.Add(new SelfPlayRow(
+                gameId,
+                moveIndex,
+                state.Turn.ToString(),
+                SideToMoveValue(state.Turn),
+                BoardEncoder.Encode(state.Board),
+                legalMoves.Select(MoveEncoder.Encode).ToArray(),
+                selectedMove,
+                0,
+                result.Stats.BestScore,
+                ToRedPerspectiveScore(result.Stats.BestScore, state.Turn),
+                result.Stats.DepthReached,
+                result.Stats.Nodes,
+                result.Stats.TimeMs));
+
+            selectedMoves.Add(selectedMove);
+            var captured = state.Board[result.Move.To.Row, result.Move.To.Col];
+            state = engine.MakeMove(state, result.Move);
+            noCapturePlies = captured is null ? noCapturePlies + 1 : 0;
+
+            if (TryAdjudicateByMaterial(state, moveIndex + 1, noCapturePlies, options, out adjudicatedResult))
+            {
+                endReason = "material-adjudication";
+                break;
+            }
         }
-    }
 
-    var signature = string.Join(',', selectedMoves);
-    if (!uniqueSignatures.Add(signature)) duplicateGames++;
+        var signature = string.Join(',', selectedMoves);
+        if (!uniqueSignatures.Add(signature)) duplicateGames++;
 
-    var finalResult = adjudicatedResult != 0 ? adjudicatedResult : GetRedPerspectiveResult(state.Status);
-    var unfinished = false;
-    if (adjudicatedResult != 0)
-    {
-        adjudicatedGames++;
-    }
-    else if (IsPlaying(state.Status))
-    {
-        unfinished = true;
-        endReason = rows.Count >= options.MaxMoves ? "max-moves" : "interrupted";
-        if (options.AdjudicateAtMaxMoves && TryAdjudicateAtMaxMoves(state, rows.Count, options, out finalResult))
+        var finalResult = adjudicatedResult != 0 ? adjudicatedResult : GetRedPerspectiveResult(state.Status);
+        var unfinished = false;
+        if (adjudicatedResult != 0)
         {
-            unfinished = false;
             adjudicatedGames++;
-            endReason = "max-moves-material-adjudication";
+        }
+        else if (IsPlaying(state.Status))
+        {
+            unfinished = true;
+            endReason = rows.Count >= options.MaxMoves ? "max-moves" : "interrupted";
+            if (options.AdjudicateAtMaxMoves && TryAdjudicateAtMaxMoves(state, rows.Count, options, out finalResult))
+            {
+                unfinished = false;
+                adjudicatedGames++;
+                endReason = "max-moves-material-adjudication";
+            }
+
+            if (unfinished) unfinishedGames++;
+        }
+        else
+        {
+            endReason = state.Status.ToString();
         }
 
-        if (unfinished) unfinishedGames++;
-    }
-    else
-    {
-        endReason = state.Status.ToString();
-    }
+        if (finalResult == 1) redWins++;
+        else if (finalResult == -1) blackWins++;
+        else draws++;
 
-    if (finalResult == 1) redWins++;
-    else if (finalResult == -1) blackWins++;
-    else draws++;
+        if (options.SkipUnfinished && unfinished)
+        {
+            skippedUnfinishedGames++;
+            Console.WriteLine($"Game {gameId}/{options.Games}: skipped unfinished {FormatResult(finalResult)} ({endReason}), rows {rows.Count}");
+            continue;
+        }
 
-    if (options.SkipDraws && finalResult == 0)
-    {
-        skippedDrawGames++;
-        Console.WriteLine($"Game {gameId}/{options.Games}: skipped {FormatResult(finalResult)} ({endReason}), rows {rows.Count}");
-        continue;
+        if (options.SkipDraws && finalResult == 0)
+        {
+            skippedDrawGames++;
+            Console.WriteLine($"Game {gameId}/{options.Games}: skipped {FormatResult(finalResult)} ({endReason}), rows {rows.Count}");
+            continue;
+        }
+
+        foreach (var row in rows)
+        {
+            var valueWeight = GetValueWeight(finalResult, unfinished, endReason);
+            var policyWeight = GetPolicyWeight(row.DepthReached);
+            var finalizedRow = row with
+            {
+                Result = finalResult,
+                ValueWeight = valueWeight,
+                PolicyWeight = policyWeight,
+                UseForValueTraining = valueWeight > 0,
+                UseForPolicyTraining = policyWeight > 0,
+                Unfinished = unfinished,
+                EndReason = endReason
+            };
+            ValidateRow(finalizedRow);
+            await writer.WriteLineAsync(JsonSerializer.Serialize(finalizedRow, jsonOptions));
+        }
+
+        totalRows += rows.Count;
+        Console.WriteLine($"Game {gameId}/{options.Games}: {FormatResult(finalResult)} ({endReason}), rows {rows.Count}");
     }
+}
+finally
+{
+    writer.Dispose();
+}
 
-    foreach (var row in rows)
-    {
-        var finalizedRow = row with { Result = finalResult, Unfinished = unfinished, EndReason = endReason };
-        ValidateRow(finalizedRow);
-        await writer.WriteLineAsync(JsonSerializer.Serialize(finalizedRow, jsonOptions));
-    }
-
-    totalRows += rows.Count;
-    Console.WriteLine($"Game {gameId}/{options.Games}: {FormatResult(finalResult)} ({endReason}), rows {rows.Count}");
+if (options.AtomicOutput)
+{
+    File.Move(writePath, outputPath, overwrite: true);
 }
 
 Console.WriteLine("Self-play complete.");
@@ -134,6 +172,7 @@ Console.WriteLine($"Draws: {draws}");
 Console.WriteLine($"Unfinished games: {unfinishedGames}");
 Console.WriteLine($"Adjudicated games: {adjudicatedGames}");
 Console.WriteLine($"Skipped draw games: {skippedDrawGames}");
+Console.WriteLine($"Skipped unfinished games: {skippedUnfinishedGames}");
 Console.WriteLine($"Total rows written: {totalRows}");
 Console.WriteLine($"Duplicate games: {duplicateGames}");
 Console.WriteLine($"Unique signatures: {uniqueSignatures.Count}");
@@ -212,10 +251,13 @@ static int PieceMaterialValue(PieceType type) => type switch
 
 static void ValidateRow(SelfPlayRow row)
 {
-    if (row.BoardEncoding.Length != 1260) throw new InvalidOperationException($"Invalid BoardEncoding length: {row.BoardEncoding.Length}");
+    if (row.BoardEncoding.Length != BoardEncoder.EncodedLength) throw new InvalidOperationException($"Invalid BoardEncoding length: {row.BoardEncoding.Length}");
+    if (row.SideToMove is not 1 and not -1) throw new InvalidOperationException($"Invalid SideToMove value: {row.SideToMove}");
     if (row.LegalMoves.Length == 0) throw new InvalidOperationException("LegalMoves must not be empty.");
     if (!row.LegalMoves.Contains(row.SelectedMove)) throw new InvalidOperationException($"SelectedMove {row.SelectedMove} not found in LegalMoves.");
     if (row.SelectedMove is < 0 or > 8099) throw new InvalidOperationException($"SelectedMove out of range: {row.SelectedMove}");
+    if (row.ValueWeight is < 0 or > 1) throw new InvalidOperationException($"ValueWeight out of range: {row.ValueWeight}");
+    if (row.PolicyWeight is < 0 or > 1) throw new InvalidOperationException($"PolicyWeight out of range: {row.PolicyWeight}");
 }
 
 static bool IsPlaying(GameStatus status) => status is GameStatus.Playing or GameStatus.RedCheck or GameStatus.BlackCheck;
@@ -234,6 +276,38 @@ static string FormatResult(int result) => result switch
     _ => "Draw/unfinished"
 };
 
+static double ToRedPerspectiveScore(double score, Side side) => side == Side.Red ? score : -score;
+
+static int SideToMoveValue(Side side) => side == Side.Red ? 1 : -1;
+
+static double GetValueWeight(int result, bool unfinished, string endReason)
+{
+    if (unfinished) return 0;
+
+    return endReason switch
+    {
+        nameof(GameStatus.RedWins) or nameof(GameStatus.BlackWins) or nameof(GameStatus.Draw) => 1,
+        "material-adjudication" => 0.75,
+        "max-moves-material-adjudication" => 0.5,
+        _ => result == 0 ? 0.25 : 0.5
+    };
+}
+
+static double GetPolicyWeight(int depthReached) => depthReached switch
+{
+    <= 0 => 0.1,
+    1 => 0.4,
+    2 => 0.7,
+    _ => 1
+};
+
+static string GetAtomicWritePath(string outputPath)
+{
+    var directory = Path.GetDirectoryName(outputPath);
+    var fileName = Path.GetFileName(outputPath);
+    return Path.Combine(directory ?? ".", $".{fileName}.{Environment.ProcessId}.tmp");
+}
+
 internal sealed record SelfPlayOptions(
     int Games,
     string OutputPath,
@@ -251,7 +325,9 @@ internal sealed record SelfPlayOptions(
     int AdjudicateNoCapturePlies,
     int AdjudicateMaterialMargin,
     bool AdjudicateAtMaxMoves,
-    bool SkipDraws)
+    bool SkipDraws,
+    bool SkipUnfinished,
+    bool AtomicOutput)
 {
     public static SelfPlayOptions Parse(string[] args)
     {
@@ -273,7 +349,9 @@ internal sealed record SelfPlayOptions(
             ["--adjudicateNoCapturePlies"] = "60",
             ["--adjudicateMaterialMargin"] = "450",
             ["--adjudicateAtMaxMoves"] = "true",
-            ["--skipDraws"] = "false"
+            ["--skipDraws"] = "false",
+            ["--skipUnfinished"] = "true",
+            ["--atomicOutput"] = "true"
         };
 
         for (var i = 0; i < args.Length; i++)
@@ -309,7 +387,9 @@ internal sealed record SelfPlayOptions(
             ParsePositiveInt(values["--adjudicateNoCapturePlies"], "--adjudicateNoCapturePlies"),
             ParsePositiveInt(values["--adjudicateMaterialMargin"], "--adjudicateMaterialMargin"),
             ParseBool(values["--adjudicateAtMaxMoves"], "--adjudicateAtMaxMoves"),
-            ParseBool(values["--skipDraws"], "--skipDraws"));
+            ParseBool(values["--skipDraws"], "--skipDraws"),
+            ParseBool(values["--skipUnfinished"], "--skipUnfinished"),
+            ParseBool(values["--atomicOutput"], "--atomicOutput"));
     }
 
     private static int ParsePositiveInt(string value, string name)
@@ -378,6 +458,7 @@ internal sealed record SelfPlayRow(
     int GameId,
     int MoveIndex,
     string Side,
+    int SideToMove,
     float[] BoardEncoding,
     int[] LegalMoves,
     int SelectedMove,
@@ -387,7 +468,9 @@ internal sealed record SelfPlayRow(
     int DepthReached,
     int Nodes,
     double TimeMs,
+    double ValueWeight = 1,
+    double PolicyWeight = 1,
+    bool UseForValueTraining = true,
+    bool UseForPolicyTraining = true,
     bool Unfinished = false,
     string EndReason = "unfinished");
-
-static double ToRedPerspectiveScore(double score, Side side) => side == Side.Red ? score : -score;
