@@ -2,24 +2,16 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:cal="http://www.caliburnproject.org"
-        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="{Binding DisplayName}"
         Width="1180"
         Height="820"
         MinWidth="960"
         MinHeight="680"
-        Background="#E7E1D2"
+        Background="Transparent"
         FontFamily="Microsoft YaHei UI, Segoe UI"
         WindowStyle="None"
         ResizeMode="CanResize"
-        AllowsTransparency="False">
-    <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0"
-                            CornerRadius="0"
-                            GlassFrameThickness="0"
-                            ResizeBorderThickness="6"
-                            UseAeroCaptionButtons="False" />
-    </shell:WindowChrome.WindowChrome>
+        AllowsTransparency="True">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
@@ -55,9 +47,9 @@
     </Window.Resources>
 
         <Border Margin="10"
-            BorderBrush="#BCAf96"
-            BorderThickness="1,0,1,1"
-            Background="#E7E1D2">
+                BorderBrush="Transparent"
+                BorderThickness="0"
+                Background="#E7E1D2">
         <Border.Effect>
             <DropShadowEffect BlurRadius="18"
                               ShadowDepth="0"
