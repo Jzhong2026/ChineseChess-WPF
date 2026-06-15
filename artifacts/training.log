@@ -1,0 +1,48 @@
+Loaded 14425 samples (0 skipped).
+Train: 12983, Val: 1442
+Model: CNN channels=64, res_blocks=4, params=1,793,979
+Device: cpu
+C:\Users\jason\AppData\Local\Programs\Python\Python314\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+epoch=001 lr=9.99e-04 train_loss=2.1569 policy_loss=1.9514 value_loss=0.2056 val_loss=2.0330 val_policy_acc=0.0000 val_legal_acc=0.0416
+epoch=002 lr=9.96e-04 train_loss=1.8739 policy_loss=1.8325 value_loss=0.0414 val_loss=2.0998 val_policy_acc=0.0000 val_legal_acc=0.0423
+epoch=003 lr=9.91e-04 train_loss=1.7114 policy_loss=1.6884 value_loss=0.0230 val_loss=2.1360 val_policy_acc=0.0000 val_legal_acc=0.0423
+epoch=004 lr=9.84e-04 train_loss=1.4952 policy_loss=1.4795 value_loss=0.0157 val_loss=2.2131 val_policy_acc=0.0000 val_legal_acc=0.0354
+epoch=005 lr=9.76e-04 train_loss=1.2569 policy_loss=1.2425 value_loss=0.0144 val_loss=2.3449 val_policy_acc=0.0000 val_legal_acc=0.0333
+epoch=006 lr=9.65e-04 train_loss=1.0382 policy_loss=1.0271 value_loss=0.0110 val_loss=2.3228 val_policy_acc=0.0000 val_legal_acc=0.0333
+epoch=007 lr=9.52e-04 train_loss=0.8467 policy_loss=0.8371 value_loss=0.0096 val_loss=2.4556 val_policy_acc=0.0000 val_legal_acc=0.0305
+epoch=008 lr=9.38e-04 train_loss=0.6818 policy_loss=0.6725 value_loss=0.0092 val_loss=2.4768 val_policy_acc=0.0000 val_legal_acc=0.0326
+epoch=009 lr=9.22e-04 train_loss=0.5426 policy_loss=0.5344 value_loss=0.0081 val_loss=2.8114 val_policy_acc=0.0000 val_legal_acc=0.0298
+epoch=010 lr=9.05e-04 train_loss=0.4275 policy_loss=0.4185 value_loss=0.0090 val_loss=2.7606 val_policy_acc=0.0000 val_legal_acc=0.0340
+epoch=011 lr=8.85e-04 train_loss=0.3359 policy_loss=0.3269 value_loss=0.0090 val_loss=3.0495 val_policy_acc=0.0000 val_legal_acc=0.0312
+epoch=012 lr=8.64e-04 train_loss=0.2608 policy_loss=0.2527 value_loss=0.0081 val_loss=2.7735 val_policy_acc=0.0000 val_legal_acc=0.0305
+epoch=013 lr=8.42e-04 train_loss=0.2031 policy_loss=0.1934 value_loss=0.0097 val_loss=2.8413 val_policy_acc=0.0000 val_legal_acc=0.0298
+epoch=014 lr=8.19e-04 train_loss=0.1605 policy_loss=0.1517 value_loss=0.0088 val_loss=3.1446 val_policy_acc=0.0000 val_legal_acc=0.0333
+epoch=015 lr=7.94e-04 train_loss=0.1300 policy_loss=0.1213 value_loss=0.0087 val_loss=3.1708 val_policy_acc=0.0000 val_legal_acc=0.0312
+epoch=016 lr=7.68e-04 train_loss=0.1077 policy_loss=0.0986 value_loss=0.0091 val_loss=3.2052 val_policy_acc=0.0000 val_legal_acc=0.0270
+epoch=017 lr=7.41e-04 train_loss=0.0876 policy_loss=0.0796 value_loss=0.0080 val_loss=3.3624 val_policy_acc=0.0000 val_legal_acc=0.0270
+epoch=018 lr=7.13e-04 train_loss=0.0687 policy_loss=0.0610 value_loss=0.0077 val_loss=3.3978 val_policy_acc=0.0000 val_legal_acc=0.0270
+epoch=019 lr=6.84e-04 train_loss=0.0558 policy_loss=0.0487 value_loss=0.0072 val_loss=3.3553 val_policy_acc=0.0000 val_legal_acc=0.0291
+epoch=020 lr=6.55e-04 train_loss=0.0449 policy_loss=0.0378 value_loss=0.0071 val_loss=3.3967 val_policy_acc=0.0000 val_legal_acc=0.0312
+epoch=021 lr=6.24e-04 train_loss=0.0364 policy_loss=0.0305 value_loss=0.0058 val_loss=3.6472 val_policy_acc=0.0000 val_legal_acc=0.0257
+epoch=022 lr=5.94e-04 train_loss=0.0345 policy_loss=0.0279 value_loss=0.0066 val_loss=3.6476 val_policy_acc=0.0000 val_legal_acc=0.0326
+epoch=023 lr=5.63e-04 train_loss=0.0295 policy_loss=0.0236 value_loss=0.0059 val_loss=3.6153 val_policy_acc=0.0000 val_legal_acc=0.0312
+epoch=024 lr=5.31e-04 train_loss=0.0262 policy_loss=0.0207 value_loss=0.0055 val_loss=3.5076 val_policy_acc=0.0000 val_legal_acc=0.0333
+epoch=025 lr=5.00e-04 train_loss=0.0247 policy_loss=0.0190 value_loss=0.0056 val_loss=3.4113 val_policy_acc=0.0000 val_legal_acc=0.0368
+epoch=026 lr=4.69e-04 train_loss=0.0233 policy_loss=0.0180 value_loss=0.0053 val_loss=3.6509 val_policy_acc=0.0000 val_legal_acc=0.0340
+epoch=027 lr=4.37e-04 train_loss=0.0226 policy_loss=0.0171 value_loss=0.0055 val_loss=3.6050 val_policy_acc=0.0000 val_legal_acc=0.0319
+epoch=028 lr=4.06e-04 train_loss=0.0219 policy_loss=0.0166 value_loss=0.0053 val_loss=3.6205 val_policy_acc=0.0000 val_legal_acc=0.0312
+epoch=029 lr=3.76e-04 train_loss=0.0214 policy_loss=0.0159 value_loss=0.0055 val_loss=3.4968 val_policy_acc=0.0000 val_legal_acc=0.0326
+epoch=030 lr=3.45e-04 train_loss=0.0212 policy_loss=0.0159 value_loss=0.0053 val_loss=3.6067 val_policy_acc=0.0000 val_legal_acc=0.0340
+epoch=031 lr=3.16e-04 train_loss=0.0203 policy_loss=0.0152 value_loss=0.0052 val_loss=3.6225 val_policy_acc=0.0000 val_legal_acc=0.0333
+epoch=032 lr=2.87e-04 train_loss=0.0201 policy_loss=0.0149 value_loss=0.0052 val_loss=3.6000 val_policy_acc=0.0000 val_legal_acc=0.0354
+epoch=033 lr=2.59e-04 train_loss=0.0197 policy_loss=0.0144 value_loss=0.0053 val_loss=3.6506 val_policy_acc=0.0000 val_legal_acc=0.0326
+epoch=034 lr=2.32e-04 train_loss=0.0194 policy_loss=0.0142 value_loss=0.0052 val_loss=3.6292 val_policy_acc=0.0000 val_legal_acc=0.0326
+epoch=035 lr=2.06e-04 train_loss=0.0189 policy_loss=0.0138 value_loss=0.0051 val_loss=3.6587 val_policy_acc=0.0000 val_legal_acc=0.0340
+epoch=036 lr=1.81e-04 train_loss=0.0187 policy_loss=0.0137 value_loss=0.0051 val_loss=3.7107 val_policy_acc=0.0000 val_legal_acc=0.0326
+epoch=037 lr=1.58e-04 train_loss=0.0186 policy_loss=0.0135 value_loss=0.0051 val_loss=3.6636 val_policy_acc=0.0000 val_legal_acc=0.0319
+epoch=038 lr=1.36e-04 train_loss=0.0183 policy_loss=0.0133 value_loss=0.0050 val_loss=3.6735 val_policy_acc=0.0000 val_legal_acc=0.0333
+epoch=039 lr=1.15e-04 train_loss=0.0182 policy_loss=0.0132 value_loss=0.0051 val_loss=3.6493 val_policy_acc=0.0000 val_legal_acc=0.0340
+epoch=040 lr=9.55e-05 train_loss=0.0180 policy_loss=0.0130 value_loss=0.0050 val_loss=3.6620 val_policy_acc=0.0000 val_legal_acc=0.0340
+epoch=041 lr=7.78e-05 train_loss=0.0179 policy_loss=0.0129 value_loss=0.0050 val_loss=3.6526 val_policy_acc=0.0000 val_legal_acc=0.0340
+epoch=042 lr=6.18e-05 train_loss=0.0177 policy_loss=0.0127 value_loss=0.0050 val_loss=3.6544 val_policy_acc=0.0000 val_legal_acc=0.0333

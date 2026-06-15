@@ -1,3 +1,4 @@
+using System.IO;
 using ChineseChess.Encoding;
 using ChineseChess.Models;
 using ChineseChess.Services;
@@ -35,6 +36,57 @@ internal static class Program
         Console.WriteLine("Core encoder verification passed.");
         Console.WriteLine($"Board encoding length: {boardEncoding.Length}");
         Console.WriteLine($"Move action id range: {minActionId}..{maxActionId}");
+
+        // ── ONNX Neural AI verification ──────────────────────────────────
+        Console.WriteLine();
+        Console.WriteLine("=== ONNX Neural AI Verification ===");
+        var onnxPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "artifacts", "cnn_policy_value.onnx");
+        // Also try the WPF output directory
+        if (!File.Exists(onnxPath))
+            onnxPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cnn_policy_value.onnx");
+
+        if (!File.Exists(onnxPath))
+        {
+            Console.WriteLine($"⚠ ONNX model not found (searched: {onnxPath})");
+            Console.WriteLine("  Skipping neural AI verification.");
+            return;
+        }
+
+        try
+        {
+            var neuralAi = new XiangqiNeuralAiService(onnxPath, engine, isCnnModel: true);
+            var state = engine.CreateInitialState();
+            var legalMoves = engine.GetLegalMoves(state.Board, Side.Red, state.History);
+
+            Console.WriteLine($"  ONNX model loaded successfully from: {onnxPath}");
+
+            // Test pure policy prediction
+            var policyMove = neuralAi.ChooseMoveByPolicy(state.Board, Side.Red, state.History);
+            Console.WriteLine($"  Policy move: {policyMove} (from {legalMoves.Count} legal moves)");
+
+            // Test value prediction
+            var value = neuralAi.EvaluatePosition(state.Board, Side.Red);
+            Console.WriteLine($"  Value prediction: {value:F4} (Red's perspective)");
+
+            // Test policy distribution
+            var dist = neuralAi.GetPolicyDistribution(state.Board, Side.Red, state.History);
+            Console.WriteLine($"  Top-3 policy moves:");
+            foreach (var (move, prob) in dist.Take(3))
+            {
+                Console.WriteLine($"    {move}: {prob:P1}");
+            }
+
+            // Test MCTS
+            var mctsAi = new MctsAiService(neuralAi, engine);
+            var mctsResult = mctsAi.Search(state.Board, Side.Red, state.History, simulations: 50, temperature: 0.0f);
+            Console.WriteLine($"  MCTS (50 sims) move: {mctsResult.BestMove}, Q={mctsResult.BestQ:F3}");
+
+            Console.WriteLine("✅ ONNX neural AI verification passed!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ ONNX neural AI verification failed: {ex.Message}");
+        }
     }
 
     private static void Require(bool condition, string message)

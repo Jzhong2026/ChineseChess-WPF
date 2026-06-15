@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using Caliburn.Micro;
 using ChineseChess.Messages;
@@ -13,16 +14,22 @@ public sealed class ShellViewModel :
     IHandle<AiLevelChangedMessage>,
     IHandle<AiTimeLimitChangedMessage>,
     IHandle<RestartRequestedMessage>,
-    IHandle<UndoRequestedMessage>
+    IHandle<UndoRequestedMessage>,
+    IHandle<AiEngineModeChangedMessage>
 {
     private readonly IEventAggregator _events;
     private readonly XiangqiEngine _engine;
     private readonly XiangqiAiService _ai;
     private readonly SoundService _sound;
+    private XiangqiNeuralAiService? _neuralAi;
+    private MctsAiService? _mctsAi;
     private GameState _state;
     private Position? _selected;
     private IReadOnlyList<Move> _legalMoves = Array.Empty<Move>();
     private CancellationTokenSource? _aiCancellation;
+
+    // ONNX model path — relative to the application's directory
+    private const string OnnxModelPath = "cnn_policy_value.onnx";
 
     public ShellViewModel(IEventAggregator events, XiangqiEngine engine, XiangqiAiService ai, SoundService sound, BoardViewModel board, SidePanelViewModel sidePanel)
     {
@@ -112,6 +119,16 @@ public sealed class ShellViewModel :
         await ResetGame();
     }
 
+    public async Task HandleAsync(AiEngineModeChangedMessage message, CancellationToken cancellationToken)
+    {
+        SidePanel.AiEngineMode = message.Mode;
+        if (message.Mode != AiEngineMode.Classic)
+        {
+            TryInitNeuralAi();
+        }
+        await ResetGame();
+    }
+
     public async Task HandleAsync(UndoRequestedMessage message, CancellationToken cancellationToken)
     {
         if (_state.History.Count == 0 || SidePanel.AiThinking) return;
@@ -140,6 +157,27 @@ public sealed class ShellViewModel :
     }
 
     private bool IsGameOver => _state.Status is GameStatus.RedWins or GameStatus.BlackWins or GameStatus.Draw;
+
+    private void TryInitNeuralAi()
+    {
+        if (_neuralAi is not null) return;
+        var modelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, OnnxModelPath);
+        if (!File.Exists(modelPath))
+        {
+            SidePanel.NeuralAiInfo = $"⚠ 模型文件不存在: {OnnxModelPath}";
+            return;
+        }
+        try
+        {
+            _neuralAi = new XiangqiNeuralAiService(modelPath, _engine, isCnnModel: true);
+            _mctsAi = new MctsAiService(_neuralAi, _engine);
+            SidePanel.NeuralAiInfo = "神经网络已加载";
+        }
+        catch (Exception ex)
+        {
+            SidePanel.NeuralAiInfo = $"⚠ 加载失败: {ex.Message}";
+        }
+    }
 
     private async Task ResetGame()
     {
@@ -189,12 +227,41 @@ public sealed class ShellViewModel :
             }
 
             var snapshot = _state;
-            var result = await Task.Run(() => _ai.ChooseMove(snapshot.Board, snapshot.Turn, SidePanel.AiLevel, snapshot.History, SidePanel.AiTimeLimitMs), token);
-            token.ThrowIfCancellationRequested();
-            SidePanel.SearchStats = result.Stats;
-            if (result.Move is not null)
+            Move? chosenMove;
+
+            if (SidePanel.AiEngineMode == AiEngineMode.Neural && _neuralAi is not null)
             {
-                _state = _engine.MakeMove(snapshot, result.Move);
+                // Pure neural network policy (no search)
+                var move = await Task.Run(() => _neuralAi.ChooseMoveByPolicy(snapshot.Board, snapshot.Turn, snapshot.History), token);
+                chosenMove = move;
+                SidePanel.SearchStats = null;
+                SidePanel.NeuralAiInfo = $"NN Policy | Value: {_neuralAi.EvaluatePosition(snapshot.Board, snapshot.Turn):+0.00;-0.00;0.00}";
+            }
+            else if (SidePanel.AiEngineMode == AiEngineMode.NeuralMcts && _mctsAi is not null)
+            {
+                // MCTS + Neural network
+                var mctsResult = await Task.Run(() => _mctsAi.Search(
+                    snapshot.Board, snapshot.Turn, snapshot.History,
+                    simulations: SidePanel.MctsSimulations,
+                    temperature: 0f,
+                    timeLimitMs: SidePanel.AiTimeLimitMs), token);
+                chosenMove = mctsResult.BestMove;
+                SidePanel.SearchStats = null;
+                SidePanel.NeuralAiInfo = $"MCTS {mctsResult.SimulationsRun} sims | Q: {mctsResult.BestQ:+0.00;-0.00;0.00}";
+            }
+            else
+            {
+                // Classic Alpha-Beta
+                var result = await Task.Run(() => _ai.ChooseMove(snapshot.Board, snapshot.Turn, SidePanel.AiLevel, snapshot.History, SidePanel.AiTimeLimitMs), token);
+                chosenMove = result.Move;
+                SidePanel.SearchStats = result.Stats;
+                SidePanel.NeuralAiInfo = null;
+            }
+
+            token.ThrowIfCancellationRequested();
+            if (chosenMove is not null)
+            {
+                _state = _engine.MakeMove(snapshot, chosenMove);
                 _sound.PlayForStatus(_state.Status);
             }
         }

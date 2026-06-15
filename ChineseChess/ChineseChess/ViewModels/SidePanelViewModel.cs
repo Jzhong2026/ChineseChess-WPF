@@ -20,6 +20,9 @@ public sealed class SidePanelViewModel : Screen, IHandle<BoardStateChangedMessag
     private string _statusText = "";
     private string _statusDetail = "";
     private bool _isRedTurn = true;
+    private AiEngineMode _aiEngineMode = AiEngineMode.Classic;
+    private string? _neuralAiInfo;
+    private int _mctsSimulations = 400;
 
     public SidePanelViewModel(IEventAggregator events, XiangqiEngine engine)
     {
@@ -150,12 +153,54 @@ public sealed class SidePanelViewModel : Screen, IHandle<BoardStateChangedMessag
     public string SearchTtBestMoveHitsText => SearchStats?.TtBestMoveHits.ToString("N0") ?? "-";
     public string SearchTtScoreHitsText => SearchStats?.TtScoreHits.ToString("N0") ?? "-";
 
+    public AiEngineMode AiEngineMode
+    {
+        get => _aiEngineMode;
+        set
+        {
+            if (Set(ref _aiEngineMode, value))
+            {
+                NotifyOfPropertyChange(nameof(IsClassicMode));
+                NotifyOfPropertyChange(nameof(IsNeuralMode));
+                NotifyOfPropertyChange(nameof(IsNeuralMctsMode));
+                NotifyOfPropertyChange(nameof(ShowClassicStats));
+                NotifyOfPropertyChange(nameof(ShowNeuralInfo));
+            }
+        }
+    }
+
+    public string? NeuralAiInfo
+    {
+        get => _neuralAiInfo;
+        set
+        {
+            if (Set(ref _neuralAiInfo, value))
+                NotifyOfPropertyChange(nameof(HasNeuralAiInfo));
+        }
+    }
+
+    public int MctsSimulations
+    {
+        get => _mctsSimulations;
+        set => Set(ref _mctsSimulations, value);
+    }
+
+    public bool IsClassicMode => AiEngineMode == AiEngineMode.Classic;
+    public bool IsNeuralMode => AiEngineMode == AiEngineMode.Neural;
+    public bool IsNeuralMctsMode => AiEngineMode == AiEngineMode.NeuralMcts;
+    public bool ShowClassicStats => AiEngineMode == AiEngineMode.Classic && HasSearchStats;
+    public bool ShowNeuralInfo => AiEngineMode != AiEngineMode.Classic;
+    public bool HasNeuralAiInfo => !string.IsNullOrEmpty(NeuralAiInfo);
+
     public async Task ChooseRed() => await _events.PublishOnUIThreadAsync(new SideChangedMessage(Side.Red));
     public async Task ChooseBlack() => await _events.PublishOnUIThreadAsync(new SideChangedMessage(Side.Black));
     public async Task ChooseLevel1() => await _events.PublishOnUIThreadAsync(new AiLevelChangedMessage(1));
     public async Task ChooseLevel2() => await _events.PublishOnUIThreadAsync(new AiLevelChangedMessage(2));
     public async Task ChooseLevel3() => await _events.PublishOnUIThreadAsync(new AiLevelChangedMessage(3));
     public async Task ChooseLevel4() => await _events.PublishOnUIThreadAsync(new AiLevelChangedMessage(4));
+    public async Task ChooseClassicMode() => await _events.PublishOnUIThreadAsync(new AiEngineModeChangedMessage(AiEngineMode.Classic));
+    public async Task ChooseNeuralMode() => await _events.PublishOnUIThreadAsync(new AiEngineModeChangedMessage(AiEngineMode.Neural));
+    public async Task ChooseNeuralMctsMode() => await _events.PublishOnUIThreadAsync(new AiEngineModeChangedMessage(AiEngineMode.NeuralMcts));
     public async Task Restart() => await _events.PublishOnUIThreadAsync(new RestartRequestedMessage());
     public async Task Undo() => await _events.PublishOnUIThreadAsync(new UndoRequestedMessage());
 

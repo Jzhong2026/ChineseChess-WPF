@@ -15,3 +15,12 @@ public sealed record AiTimeLimitChangedMessage(int TimeLimitMs);
 public sealed record RestartRequestedMessage;
 
 public sealed record UndoRequestedMessage;
+
+/// <summary>
+/// Fired when the user switches the AI engine mode.
+/// Classic = Negamax Alpha-Beta (original engine)
+/// Neural  = ONNX policy-value network (requires model file)
+/// </summary>
+public enum AiEngineMode { Classic, Neural, NeuralMcts }
+
+public sealed record AiEngineModeChangedMessage(AiEngineMode Mode);

@@ -28,6 +28,12 @@
         <Style x:Key="ActionButtonStyle" TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
             <Setter Property="Margin" Value="0,0,8,0" />
         </Style>
+
+        <!-- Active tab style -->
+        <Style x:Key="ActiveSegmentStyle" TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
+            <Setter Property="Background" Value="#2B6864" />
+            <Setter Property="Foreground" Value="#FFFAF0" />
+        </Style>
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -42,6 +48,7 @@
                        FontWeight="Bold"
                        Margin="0,4,0,18" />
 
+            <!-- Status Card -->
             <Border Style="{StaticResource PanelCardStyle}">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal">
@@ -74,6 +81,7 @@
                 </StackPanel>
             </Border>
 
+            <!-- 执棋 -->
             <TextBlock Text="执棋"
                        Foreground="#5F5148"
                        FontWeight="Bold"
@@ -107,16 +115,17 @@
                 </Button>
             </UniformGrid>
 
-            <TextBlock Text="难度"
+            <!-- AI 引擎模式 -->
+            <TextBlock Text="AI 引擎"
                        Foreground="#5F5148"
                        FontWeight="Bold"
                        Margin="0,0,0,8" />
-            <UniformGrid Columns="4" Margin="0,0,0,14">
-                <Button Content="简单" cal:Message.Attach="[Event Click] = [Action ChooseLevel1]">
+            <UniformGrid Columns="3" Margin="0,0,0,10">
+                <Button Content="传统搜索" cal:Message.Attach="[Event Click] = [Action ChooseClassicMode]">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsLevel1}" Value="True">
+                                <DataTrigger Binding="{Binding IsClassicMode}" Value="True">
                                     <Setter Property="Background" Value="#2B6864" />
                                     <Setter Property="Foreground" Value="#FFFAF0" />
                                 </DataTrigger>
@@ -124,36 +133,24 @@
                         </Style>
                     </Button.Style>
                 </Button>
-                <Button Content="基础" cal:Message.Attach="[Event Click] = [Action ChooseLevel2]">
+                <Button Content="NN 策略" cal:Message.Attach="[Event Click] = [Action ChooseNeuralMode]">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsLevel2}" Value="True">
-                                    <Setter Property="Background" Value="#2B6864" />
+                                <DataTrigger Binding="{Binding IsNeuralMode}" Value="True">
+                                    <Setter Property="Background" Value="#8B5CF6" />
                                     <Setter Property="Foreground" Value="#FFFAF0" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Button.Style>
                 </Button>
-                <Button Content="中等" cal:Message.Attach="[Event Click] = [Action ChooseLevel3]">
+                <Button Content="NN+MCTS" cal:Message.Attach="[Event Click] = [Action ChooseNeuralMctsMode]">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsLevel3}" Value="True">
-                                    <Setter Property="Background" Value="#2B6864" />
-                                    <Setter Property="Foreground" Value="#FFFAF0" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
-                <Button Content="困难" cal:Message.Attach="[Event Click] = [Action ChooseLevel4]">
-                    <Button.Style>
-                        <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsLevel4}" Value="True">
-                                    <Setter Property="Background" Value="#2B6864" />
+                                <DataTrigger Binding="{Binding IsNeuralMctsMode}" Value="True">
+                                    <Setter Property="Background" Value="#7C3AED" />
                                     <Setter Property="Foreground" Value="#FFFAF0" />
                                 </DataTrigger>
                             </Style.Triggers>
@@ -162,6 +159,94 @@
                 </Button>
             </UniformGrid>
 
+            <!-- Neural AI info (shown when non-classic mode) -->
+            <Border Style="{StaticResource PanelCardStyle}"
+                    Visibility="{Binding ShowNeuralInfo, Converter={StaticResource BoolToVisibility}}"
+                    Background="#F3F0FF"
+                    Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="神经网络 AI"
+                               FontWeight="Bold"
+                               Foreground="#6D28D9"
+                               Margin="0,0,0,4"/>
+                    <TextBlock Text="{Binding NeuralAiInfo}"
+                               Foreground="#6D28D9"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding HasNeuralAiInfo, Converter={StaticResource BoolToVisibility}}"/>
+                    <!-- MCTS simulations slider (visible in MCTS mode only) -->
+                    <StackPanel Visibility="{Binding IsNeuralMctsMode, Converter={StaticResource BoolToVisibility}}"
+                                Margin="0,8,0,0">
+                        <TextBlock Text="{Binding MctsSimulations, StringFormat=MCTS 模拟次数: {0}}"
+                                   Foreground="#6D28D9"
+                                   Margin="0,0,0,4"/>
+                        <Slider Minimum="100"
+                                Maximum="2000"
+                                TickFrequency="100"
+                                IsSnapToTickEnabled="True"
+                                Value="{Binding MctsSimulations, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Classic: 难度 (only shown in classic mode) -->
+            <StackPanel Visibility="{Binding IsClassicMode, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="难度"
+                           Foreground="#5F5148"
+                           FontWeight="Bold"
+                           Margin="0,0,0,8" />
+                <UniformGrid Columns="4" Margin="0,0,0,14">
+                    <Button Content="简单" cal:Message.Attach="[Event Click] = [Action ChooseLevel1]">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLevel1}" Value="True">
+                                        <Setter Property="Background" Value="#2B6864" />
+                                        <Setter Property="Foreground" Value="#FFFAF0" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="基础" cal:Message.Attach="[Event Click] = [Action ChooseLevel2]">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLevel2}" Value="True">
+                                        <Setter Property="Background" Value="#2B6864" />
+                                        <Setter Property="Foreground" Value="#FFFAF0" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="中等" cal:Message.Attach="[Event Click] = [Action ChooseLevel3]">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLevel3}" Value="True">
+                                        <Setter Property="Background" Value="#2B6864" />
+                                        <Setter Property="Foreground" Value="#FFFAF0" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="困难" cal:Message.Attach="[Event Click] = [Action ChooseLevel4]">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLevel4}" Value="True">
+                                        <Setter Property="Background" Value="#2B6864" />
+                                        <Setter Property="Foreground" Value="#FFFAF0" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </UniformGrid>
+            </StackPanel>
+
+            <!-- AI 思考时间 -->
             <TextBlock Text="{Binding AiTimeLimitMs, StringFormat=AI 思考时间：{0} ms}"
                        Foreground="#5F5148"
                        FontWeight="Bold"
@@ -173,8 +258,9 @@
                     Value="{Binding AiTimeLimitMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                     Margin="0,0,0,16" />
 
+            <!-- Classic AI search stats -->
             <Border Style="{StaticResource PanelCardStyle}"
-                    Visibility="{Binding HasSearchStats, Converter={StaticResource BoolToVisibility}}">
+                    Visibility="{Binding ShowClassicStats, Converter={StaticResource BoolToVisibility}}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition />
@@ -208,6 +294,7 @@
                 </Grid>
             </Border>
 
+            <!-- 操作按钮 -->
             <UniformGrid Columns="2" Margin="0,0,0,14">
                 <Button Content="重开"
                         Background="#A3332A"
@@ -219,6 +306,7 @@
                         cal:Message.Attach="[Event Click] = [Action Undo]" />
             </UniformGrid>
 
+            <!-- 棋谱 -->
             <Border Style="{StaticResource PanelCardStyle}" Padding="0">
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="14,12">
