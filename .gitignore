@@ -15,3 +15,7 @@
 /ChineseChess/ChineseChess.SelfPlay/obj
 /data/
 *.jsonl
+/ChineseChess/ChineseChess/bin
+/ChineseChess/ChineseChess.Core/bin
+/ChineseChess/ChineseChess.Core.Verification/bin
+/ChineseChess/ChineseChess.SelfPlay/bin
