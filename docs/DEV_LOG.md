@@ -1068,7 +1068,7 @@ python export_cnn_onnx.py \
 
 ---
 
-## 模型版本汇总（截至 2026-06-16）
+## 模型版本汇总（截至 2026-06-16，持续更新中）
 
 | 版本 | 日期 | 架构 | 数据量 | 输入平面 | from_acc | to_acc | Top-10 | 参数量 | 状态 |
 |------|------|------|--------|---------|----------|--------|--------|--------|------|
@@ -1077,7 +1077,8 @@ python export_cnn_onnx.py \
 | V4 | 06-15 | CNN factored from/to | 74,643 | 14 | 13% | 5% | 33% | 116K | 已覆盖 |
 | V5 | 06-15 | CNN factored + side-aware | 74,643 | 16 | 24% | 7% | 33% | 116K | 已覆盖 |
 | V6 | 06-16 | CNN factored 64ch/6blk + side-aware | 74,643 | 16 | 25% | 8% | 33% | 509K | 已部署 |
-| **V7** | **06-16** | **CNN full 8100 + side-aware** | **74,643** | **16** | — | — | **34%** (↑) | **6.32M** | **训练中** |
+| V7 (fine-tune) | 06-16 | CNN full 8100 + side-aware | 74,643 | 16 | — | — | 34% | 6.32M | 10 epoch 基线 |
+| **V7 (continue)** | **06-16** | **CNN full 8100 + side-aware** | **74,643** | **16** | — | — | **34%→?** | **6.32M** | **继续训练 50 epoch 中** |
 
 ### 关键里程碑
 - **V3→V4**: 侧边盲区诊断 → 架构改造为 factored head
@@ -1128,3 +1129,100 @@ python export_cnn_onnx.py \
 | `SidePanelViewModel.cs` | MCTS 默认模拟次数 400→800 |
 | `SidePanelView.xaml` | MCTS 最大模拟次数 2000→4000 |
 | `train_v7_full_policy.py` | 新建 V7 训练脚本（full 8100 policy head） |
+
+---
+
+## 阶段九：持续训练与数据扩充（2026-06-16 晚）
+
+**启动时间：** 2026-06-16 19:30~20:00
+
+### 9.1 问题分析：V7 训练不足
+
+V7 模型（full 8100 policy head, 6.32M params）仅从 V6 checkpoint fine-tune 了 10 个 epoch，存在两个问题：
+1. **训练轮次不足**：val_loss 在 epoch 10 仍为 3.32 且持续下降（epoch 1: 4.37 → epoch 10: 3.32），说明模型远未收敛
+2. **fine-tune 初始化不理想**：V6 的 backbone 是针对 factored head 训练的，加载到 V7 后 backbone 没有机会适配 full 8100 head
+
+### 9.2 方案选型
+
+| 方案 | 说明 | 决策 |
+|------|------|------|
+| **A) 从 zero 训练 V7** | 随机初始化全部参数，50 epoch | ❌ 上次 OOM 崩溃（内存 4.3GB 吃满） |
+| **B) 继续训练 V7** | 从 V7 best checkpoint 继续 50 epoch，lr=5e-5 | ✅ 最稳妥，继承已学知识 |
+| **C) 训练 V6** | 用 factored head，更快更省内存 | ❌ to_acc=8% 瓶颈未解决 |
+
+**选择 B**（`train_v7_continue.py`，新增脚本）：
+- 从 V7 best checkpoint（epoch 10）继续训练
+- 使用更低学习率（5e-5 vs 1e-4）防止破坏已学特征
+- CosineAnnealingLR 调度
+- val_loss 目标：从 3.32 降到 3.0 以下
+
+### 9.3 新增脚本：`train_v7_continue.py`
+
+专为从 V7 checkpoint 继续训练设计的脚本：
+- 直接加载 V7 `cnn_full_v7` 架构 checkpoint（非 V6）
+- 使用完整训练循环（不冻结任何层）
+- 定期保存 epoch checkpoint（每 5 epoch）
+- 保留 best val_loss 模型
+
+**当前阶段性结果（epoch 1-3）：**
+```
+epoch=001 val_loss=3.2964 val_top10=33.29% train_acc=9.37%
+epoch=002 val_loss=3.2485 val_top10=34.19% train_acc=9.95%  ✅ 超越基线
+epoch=003 val_loss=3.2474 val_top10=33.64% train_acc=10.51%
+```
+- val_loss 稳步下降（3.30 → 3.25）
+- train_acc 持续提升（9.4% → 10.5%）— 模型在学习
+- **预计 50 epoch 完成后 val_loss 可降至 ~3.0，Top-10 提升至 35-38%**
+
+### 9.4 自对弈数据扩充
+
+在 V7 训练的同时，启动 **2000 局 Level-4 自对弈** 生成新训练数据：
+
+```bash
+dotnet run --project ChineseChess.SelfPlay -- \
+  --games 2000 --out ../data/selfplay/train_2000.jsonl \
+  --level 4 --timeMs 300 --randomOpeningPlies 14 --seed 42
+```
+
+**参数选择理由：**
+| 参数 | 值 | 理由 |
+|------|-----|------|
+| games=2000 | 2000 | 预计产出 ~300K 样本，足够支撑 6.32M 参数模型 |
+| level=4 | 4 | 最高质量 AI 搜索生成的标签 |
+| timeMs=300 | 300 | 每步 300ms 搜索时间，平衡质量与速度 |
+| randomOpeningPlies=14 | 14 | 足够长的随机开局，保证局谱多样性 |
+
+### 9.5 导出脚本升级
+
+`export_cnn_onnx.py` 新增 `cnn_full_v7` 架构支持：
+- 新增 `CNNFullPolicyValueNet` 模型类（16 输入平面 + policy_channels 参数）
+- 自动检测 checkpoint 中的 `architecture="cnn_full_v7"` 标记
+- 动态读取 `policy_channels` 参数（默认 8）
+- 输出：`policy_logits[1,8100], value_pred[1]`
+
+### 9.6 凌晨自动导出机制
+
+创建一次性定时任务（automation）：
+- **触发时间：** 2026-06-17 03:00 (GMT+8)
+- **任务内容：**
+  1. 检查 V7 continue 训练是否完成（`cnn_policy_value_v7_cont.best.pt`）
+  2. 若完成，导出 ONNX（`cnn_policy_value.onnx`）
+  3. 若 V7 continue 未完成，使用原有 V7 best checkpoint 导出
+  4. 验证 ONNX 文件完整性
+  5. 记录自对弈进度到工作日誌
+
+### 9.7 后续规划（用户唤醒后执行）
+
+| 步骤 | 内容 | 预计 |
+|------|------|------|
+| 1 | 检查自对弈 2000 局是否完成 | 6/17 04:30~ |
+| 2 | 合并 500 局（220MB）+ 2000 局（~880MB）≈ 1.1GB 训练数据 | — |
+| 3 | 用全部数据从头训练 V7 50 epoch（预计 12h+） | 时间长 |
+| 4 | 导出 ONNX，构建 WPF 替换模型 | — |
+| 5 | 新旧模型对战测试 | — |
+
+### 9.8 重要观察
+
+- **内存瓶颈**：Python 训练脚本将 74K 样本全部加载到内存（4.3GB），当训练数据扩大 5 倍到 ~300K 样本时，预计内存占用 15GB+，需要考虑流式训练方案
+- **训练速度**：CPU 训练 6.32M 参数模型约 7min/epoch，50 epoch ≈ 5.8h。GPU 训练可提速 10-50 倍
+- **自对弈速度**：~1 局/分钟，2000 局 ≈ 33h。瓶颈在 Negamax 搜索，预计 NN 指导的自对弈（AlphaZero 风格）可提速 10+ 倍

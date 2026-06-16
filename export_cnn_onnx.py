@@ -96,6 +96,45 @@ class CNNFactoredPolicyValueNet(nn.Module):
 
 
 # Legacy flat model (for backward compatibility)
+class CNNFullPolicyValueNet(nn.Module):
+    """V7: 16 input planes, full 8100 policy head (AlphaZero-style)."""
+    def __init__(self, in_channels: int = INPUT_PLANES, channels: int = 64,
+                 res_blocks: int = 6, policy_dropout: float = 0.2,
+                 value_dropout: float = 0.2, policy_channels: int = 8) -> None:
+        super().__init__()
+        self.stem = nn.Sequential(
+            nn.Conv2d(in_channels, channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(channels),
+            nn.ReLU(inplace=True),
+        )
+        self.tower = nn.Sequential(*[ResidualBlock(channels) for _ in range(res_blocks)])
+        self.policy_conv = nn.Conv2d(channels, policy_channels, kernel_size=1, bias=False)
+        self.policy_bn = nn.BatchNorm2d(policy_channels)
+        self.policy_dropout = nn.Dropout(policy_dropout)
+        self.policy_fc = nn.Linear(policy_channels * BOARD_SIZE, ACTION_DIM)
+        self.value_conv = nn.Conv2d(channels, 1, kernel_size=1, bias=False)
+        self.value_bn = nn.BatchNorm2d(1)
+        self.value_dropout1 = nn.Dropout(value_dropout)
+        self.value_fc1 = nn.Linear(BOARD_SIZE, 256)
+        self.value_dropout2 = nn.Dropout(value_dropout)
+        self.value_fc2 = nn.Linear(256, 1)
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        x = self.stem(x)
+        x = self.tower(x)
+        p = F.relu(self.policy_bn(self.policy_conv(x)))
+        p = p.flatten(1)
+        p = self.policy_dropout(p)
+        policy_logits = self.policy_fc(p)
+        v = F.relu(self.value_bn(self.value_conv(x)))
+        v = v.flatten(1)
+        v = self.value_dropout1(v)
+        v = F.relu(self.value_fc1(v))
+        v = self.value_dropout2(v)
+        value_pred = torch.tanh(self.value_fc2(v)).squeeze(1)
+        return policy_logits, value_pred
+
+
 class CNNPolicyValueNet(nn.Module):
     def __init__(self, in_channels: int = BOARD_PLANES, channels: int = 128,
                  res_blocks: int = 8, policy_dropout: float = 0.3,
@@ -150,10 +189,17 @@ def export(args: argparse.Namespace) -> None:
     # V5 models have 16 input planes; older models have 14
     model_planes = checkpoint.get("planes", BOARD_PLANES)
     is_factored = architecture in ("cnn_factored", "cnn_factored_v5")
+    is_full_v7 = architecture in ("cnn_full_v7",)
 
     print(f"  Architecture: {architecture}, channels={channels}, res_blocks={res_blocks}, input_planes={model_planes}")
 
-    if is_factored:
+    if is_full_v7:
+        policy_channels = checkpoint.get("policy_channels", 8)
+        model = CNNFullPolicyValueNet(
+            in_channels=model_planes, channels=channels, res_blocks=res_blocks,
+            policy_dropout=policy_dropout, value_dropout=value_dropout,
+            policy_channels=policy_channels)
+    elif is_factored:
         model = CNNFactoredPolicyValueNet(
             in_channels=model_planes, channels=channels, res_blocks=res_blocks,
             policy_dropout=policy_dropout, value_dropout=value_dropout)
@@ -179,6 +225,13 @@ def export(args: argparse.Namespace) -> None:
             "board_input": {0: "batch_size"},
             "from_logits": {0: "batch_size"},
             "to_logits": {0: "batch_size"},
+            "value_pred": {0: "batch_size"},
+        }
+    elif is_full_v7:
+        output_names = ["policy_logits", "value_pred"]
+        dynamic_axes = {
+            "board_input": {0: "batch_size"},
+            "policy_logits": {0: "batch_size"},
             "value_pred": {0: "batch_size"},
         }
     else:
@@ -219,7 +272,14 @@ def export(args: argparse.Namespace) -> None:
     except ImportError:
         print("onnx not installed; skipping check.")
 
-    if is_factored:
+    if is_full_v7:
+        print(f"\nC# integration note:")
+        print(f"  V7 full 8100 model has 2 outputs: policy_logits[1,8100], value_pred[1]")
+        print(f"  Input planes: {model_planes} (14 piece + 2 side-to-move)")
+        print(f"  Value is from CURRENT PLAYER's perspective (+1 = I'm winning)")
+        print(f"  Side-to-move encoding: plane[14]=1 if Red, plane[15]=1 if Black")
+        print(f"  policy_channels={policy_channels}")
+    elif is_factored:
         print(f"\nC# integration note:")
         print(f"  Factored model has 3 outputs: from_logits[1,90], to_logits[1,90], value_pred[1]")
         print(f"  Input planes: {model_planes} (14 piece + 2 side-to-move)")
