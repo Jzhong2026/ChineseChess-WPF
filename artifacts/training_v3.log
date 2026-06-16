@@ -1,0 +1,89 @@
+Loaded 74643 samples (0 skipped).
+Train: 67179, Val: 7464
+Model: CNN channels=32, res_blocks=3, params=1,549,531
+Device: cpu
+C:\Users\jason\AppData\Local\Programs\Python\Python314\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+epoch=001 lr=3.00e-04 train_loss=2.7392 policy_loss=2.2016 value_loss=0.5376 val_loss=2.5060 val_legal_acc=0.0560 val_top5=0.2083 val_top10=0.3601 val_policy_acc=0.0000
+epoch=002 lr=3.00e-04 train_loss=2.4377 policy_loss=2.1585 value_loss=0.2792 val_loss=2.3397 val_legal_acc=0.0527 val_top5=0.2109 val_top10=0.3569 val_policy_acc=0.0000
+epoch=003 lr=2.99e-04 train_loss=2.3225 policy_loss=2.1463 value_loss=0.1762 val_loss=2.2747 val_legal_acc=0.0481 val_top5=0.2114 val_top10=0.3629 val_policy_acc=0.0000
+epoch=004 lr=2.98e-04 train_loss=2.2646 policy_loss=2.1333 value_loss=0.1313 val_loss=2.2726 val_legal_acc=0.0482 val_top5=0.2078 val_top10=0.3569 val_policy_acc=0.0000
+epoch=005 lr=2.97e-04 train_loss=2.2294 policy_loss=2.1179 value_loss=0.1115 val_loss=2.2613 val_legal_acc=0.0470 val_top5=0.2101 val_top10=0.3643 val_policy_acc=0.0000
+epoch=006 lr=2.96e-04 train_loss=2.1959 policy_loss=2.1000 value_loss=0.0959 val_loss=2.2527 val_legal_acc=0.0438 val_top5=0.2063 val_top10=0.3605 val_policy_acc=0.0000
+epoch=007 lr=2.94e-04 train_loss=2.1608 policy_loss=2.0763 value_loss=0.0845 val_loss=2.2671 val_legal_acc=0.0453 val_top5=0.2059 val_top10=0.3604 val_policy_acc=0.0000
+epoch=008 lr=2.93e-04 train_loss=2.1276 policy_loss=2.0479 value_loss=0.0798 val_loss=2.2676 val_legal_acc=0.0474 val_top5=0.2075 val_top10=0.3605 val_policy_acc=0.0000
+epoch=009 lr=2.91e-04 train_loss=2.0868 policy_loss=2.0142 value_loss=0.0727 val_loss=2.2853 val_legal_acc=0.0473 val_top5=0.1927 val_top10=0.3538 val_policy_acc=0.0000
+epoch=010 lr=2.89e-04 train_loss=2.0417 policy_loss=1.9737 value_loss=0.0679 val_loss=2.3048 val_legal_acc=0.0446 val_top5=0.1923 val_top10=0.3465 val_policy_acc=0.0000
+epoch=011 lr=2.86e-04 train_loss=2.0036 policy_loss=1.9357 value_loss=0.0679 val_loss=2.3248 val_legal_acc=0.0478 val_top5=0.1960 val_top10=0.3498 val_policy_acc=0.0000
+epoch=012 lr=2.84e-04 train_loss=1.9571 policy_loss=1.8949 value_loss=0.0622 val_loss=2.3519 val_legal_acc=0.0441 val_top5=0.1928 val_top10=0.3434 val_policy_acc=0.0000
+epoch=013 lr=2.81e-04 train_loss=1.9093 policy_loss=1.8503 value_loss=0.0590 val_loss=2.3462 val_legal_acc=0.0426 val_top5=0.1908 val_top10=0.3422 val_policy_acc=0.0000
+epoch=014 lr=2.78e-04 train_loss=1.8646 policy_loss=1.8091 value_loss=0.0555 val_loss=2.3737 val_legal_acc=0.0415 val_top5=0.1904 val_top10=0.3407 val_policy_acc=0.0000
+epoch=015 lr=2.75e-04 train_loss=1.8217 policy_loss=1.7653 value_loss=0.0564 val_loss=2.3930 val_legal_acc=0.0409 val_top5=0.1818 val_top10=0.3348 val_policy_acc=0.0000
+epoch=016 lr=2.71e-04 train_loss=1.7848 policy_loss=1.7312 value_loss=0.0536 val_loss=2.3966 val_legal_acc=0.0435 val_top5=0.1873 val_top10=0.3359 val_policy_acc=0.0000
+epoch=017 lr=2.68e-04 train_loss=1.7471 policy_loss=1.6941 value_loss=0.0530 val_loss=2.4629 val_legal_acc=0.0409 val_top5=0.1837 val_top10=0.3315 val_policy_acc=0.0000
+epoch=018 lr=2.64e-04 train_loss=1.7167 policy_loss=1.6658 value_loss=0.0509 val_loss=2.4730 val_legal_acc=0.0395 val_top5=0.1841 val_top10=0.3344 val_policy_acc=0.0000
+epoch=019 lr=2.60e-04 train_loss=1.6833 policy_loss=1.6334 value_loss=0.0499 val_loss=2.5100 val_legal_acc=0.0411 val_top5=0.1846 val_top10=0.3340 val_policy_acc=0.0000
+epoch=020 lr=2.56e-04 train_loss=1.6531 policy_loss=1.6060 value_loss=0.0471 val_loss=2.5274 val_legal_acc=0.0399 val_top5=0.1793 val_top10=0.3357 val_policy_acc=0.0000
+epoch=021 lr=2.52e-04 train_loss=1.6247 policy_loss=1.5778 value_loss=0.0469 val_loss=2.5537 val_legal_acc=0.0430 val_top5=0.1805 val_top10=0.3341 val_policy_acc=0.0000
+epoch=022 lr=2.47e-04 train_loss=1.5980 policy_loss=1.5520 value_loss=0.0459 val_loss=2.5709 val_legal_acc=0.0430 val_top5=0.1807 val_top10=0.3372 val_policy_acc=0.0000
+epoch=023 lr=2.43e-04 train_loss=1.5715 policy_loss=1.5265 value_loss=0.0450 val_loss=2.6023 val_legal_acc=0.0438 val_top5=0.1825 val_top10=0.3359 val_policy_acc=0.0000
+epoch=024 lr=2.38e-04 train_loss=1.5543 policy_loss=1.5082 value_loss=0.0461 val_loss=2.6329 val_legal_acc=0.0411 val_top5=0.1818 val_top10=0.3294 val_policy_acc=0.0000
+epoch=025 lr=2.33e-04 train_loss=1.5292 policy_loss=1.4850 value_loss=0.0442 val_loss=2.6515 val_legal_acc=0.0415 val_top5=0.1797 val_top10=0.3317 val_policy_acc=0.0000
+epoch=026 lr=2.28e-04 train_loss=1.5067 policy_loss=1.4623 value_loss=0.0444 val_loss=2.6441 val_legal_acc=0.0429 val_top5=0.1825 val_top10=0.3348 val_policy_acc=0.0000
+epoch=027 lr=2.23e-04 train_loss=1.4864 policy_loss=1.4424 value_loss=0.0439 val_loss=2.7146 val_legal_acc=0.0434 val_top5=0.1771 val_top10=0.3335 val_policy_acc=0.0000
+epoch=028 lr=2.18e-04 train_loss=1.4682 policy_loss=1.4264 value_loss=0.0417 val_loss=2.7689 val_legal_acc=0.0443 val_top5=0.1786 val_top10=0.3282 val_policy_acc=0.0000
+epoch=029 lr=2.13e-04 train_loss=1.4534 policy_loss=1.4118 value_loss=0.0416 val_loss=2.7247 val_legal_acc=0.0429 val_top5=0.1778 val_top10=0.3304 val_policy_acc=0.0000
+epoch=030 lr=2.07e-04 train_loss=1.4352 policy_loss=1.3951 value_loss=0.0401 val_loss=2.8030 val_legal_acc=0.0427 val_top5=0.1771 val_top10=0.3341 val_policy_acc=0.0000
+epoch=031 lr=2.02e-04 train_loss=1.4138 policy_loss=1.3744 value_loss=0.0394 val_loss=2.8150 val_legal_acc=0.0438 val_top5=0.1775 val_top10=0.3335 val_policy_acc=0.0000
+epoch=032 lr=1.96e-04 train_loss=1.4042 policy_loss=1.3615 value_loss=0.0427 val_loss=2.8430 val_legal_acc=0.0437 val_top5=0.1798 val_top10=0.3311 val_policy_acc=0.0000
+epoch=033 lr=1.91e-04 train_loss=1.3823 policy_loss=1.3428 value_loss=0.0394 val_loss=2.8624 val_legal_acc=0.0438 val_top5=0.1790 val_top10=0.3286 val_policy_acc=0.0000
+epoch=034 lr=1.85e-04 train_loss=1.3667 policy_loss=1.3275 value_loss=0.0392 val_loss=2.8279 val_legal_acc=0.0414 val_top5=0.1777 val_top10=0.3319 val_policy_acc=0.0000
+epoch=035 lr=1.79e-04 train_loss=1.3600 policy_loss=1.3213 value_loss=0.0387 val_loss=2.9003 val_legal_acc=0.0406 val_top5=0.1794 val_top10=0.3312 val_policy_acc=0.0000
+epoch=036 lr=1.73e-04 train_loss=1.3434 policy_loss=1.3042 value_loss=0.0392 val_loss=2.8787 val_legal_acc=0.0435 val_top5=0.1786 val_top10=0.3269 val_policy_acc=0.0000
+epoch=037 lr=1.68e-04 train_loss=1.3277 policy_loss=1.2901 value_loss=0.0376 val_loss=2.9479 val_legal_acc=0.0411 val_top5=0.1783 val_top10=0.3327 val_policy_acc=0.0000
+epoch=038 lr=1.62e-04 train_loss=1.3175 policy_loss=1.2801 value_loss=0.0374 val_loss=2.9271 val_legal_acc=0.0422 val_top5=0.1744 val_top10=0.3293 val_policy_acc=0.0000
+epoch=039 lr=1.56e-04 train_loss=1.3020 policy_loss=1.2648 value_loss=0.0372 val_loss=2.9604 val_legal_acc=0.0427 val_top5=0.1779 val_top10=0.3264 val_policy_acc=0.0000
+epoch=040 lr=1.50e-04 train_loss=1.2897 policy_loss=1.2534 value_loss=0.0363 val_loss=2.9783 val_legal_acc=0.0413 val_top5=0.1740 val_top10=0.3260 val_policy_acc=0.0000
+epoch=041 lr=1.44e-04 train_loss=1.2810 policy_loss=1.2446 value_loss=0.0363 val_loss=2.9744 val_legal_acc=0.0430 val_top5=0.1791 val_top10=0.3273 val_policy_acc=0.0000
+epoch=042 lr=1.38e-04 train_loss=1.2694 policy_loss=1.2337 value_loss=0.0357 val_loss=3.0141 val_legal_acc=0.0422 val_top5=0.1778 val_top10=0.3237 val_policy_acc=0.0000
+epoch=043 lr=1.32e-04 train_loss=1.2571 policy_loss=1.2221 value_loss=0.0350 val_loss=3.0418 val_legal_acc=0.0438 val_top5=0.1789 val_top10=0.3276 val_policy_acc=0.0000
+epoch=044 lr=1.27e-04 train_loss=1.2477 policy_loss=1.2133 value_loss=0.0345 val_loss=3.0441 val_legal_acc=0.0418 val_top5=0.1785 val_top10=0.3298 val_policy_acc=0.0000
+epoch=045 lr=1.21e-04 train_loss=1.2334 policy_loss=1.1987 value_loss=0.0348 val_loss=3.1115 val_legal_acc=0.0426 val_top5=0.1758 val_top10=0.3286 val_policy_acc=0.0000
+epoch=046 lr=1.15e-04 train_loss=1.2291 policy_loss=1.1960 value_loss=0.0331 val_loss=3.0143 val_legal_acc=0.0430 val_top5=0.1785 val_top10=0.3264 val_policy_acc=0.0000
+epoch=047 lr=1.09e-04 train_loss=1.2165 policy_loss=1.1813 value_loss=0.0352 val_loss=3.0725 val_legal_acc=0.0422 val_top5=0.1767 val_top10=0.3257 val_policy_acc=0.0000
+epoch=048 lr=1.04e-04 train_loss=1.2093 policy_loss=1.1767 value_loss=0.0326 val_loss=3.0821 val_legal_acc=0.0429 val_top5=0.1756 val_top10=0.3262 val_policy_acc=0.0000
+epoch=049 lr=9.81e-05 train_loss=1.1986 policy_loss=1.1653 value_loss=0.0333 val_loss=3.1267 val_legal_acc=0.0409 val_top5=0.1783 val_top10=0.3293 val_policy_acc=0.0000
+epoch=050 lr=9.26e-05 train_loss=1.1920 policy_loss=1.1599 value_loss=0.0321 val_loss=3.1279 val_legal_acc=0.0437 val_top5=0.1755 val_top10=0.3308 val_policy_acc=0.0000
+epoch=051 lr=8.72e-05 train_loss=1.1835 policy_loss=1.1520 value_loss=0.0315 val_loss=3.1481 val_legal_acc=0.0414 val_top5=0.1789 val_top10=0.3248 val_policy_acc=0.0000
+epoch=052 lr=8.19e-05 train_loss=1.1741 policy_loss=1.1423 value_loss=0.0318 val_loss=3.1439 val_legal_acc=0.0430 val_top5=0.1760 val_top10=0.3244 val_policy_acc=0.0000
+epoch=053 lr=7.67e-05 train_loss=1.1667 policy_loss=1.1353 value_loss=0.0314 val_loss=3.1596 val_legal_acc=0.0442 val_top5=0.1734 val_top10=0.3252 val_policy_acc=0.0000
+epoch=054 lr=7.16e-05 train_loss=1.1614 policy_loss=1.1307 value_loss=0.0307 val_loss=3.1721 val_legal_acc=0.0409 val_top5=0.1764 val_top10=0.3266 val_policy_acc=0.0000
+epoch=055 lr=6.67e-05 train_loss=1.1540 policy_loss=1.1234 value_loss=0.0307 val_loss=3.1968 val_legal_acc=0.0433 val_top5=0.1777 val_top10=0.3278 val_policy_acc=0.0000
+epoch=056 lr=6.18e-05 train_loss=1.1446 policy_loss=1.1143 value_loss=0.0303 val_loss=3.1879 val_legal_acc=0.0419 val_top5=0.1768 val_top10=0.3268 val_policy_acc=0.0000
+epoch=057 lr=5.71e-05 train_loss=1.1393 policy_loss=1.1082 value_loss=0.0311 val_loss=3.2358 val_legal_acc=0.0427 val_top5=0.1786 val_top10=0.3256 val_policy_acc=0.0000
+epoch=058 lr=5.26e-05 train_loss=1.1345 policy_loss=1.1050 value_loss=0.0296 val_loss=3.1899 val_legal_acc=0.0442 val_top5=0.1789 val_top10=0.3246 val_policy_acc=0.0000
+epoch=059 lr=4.82e-05 train_loss=1.1267 policy_loss=1.0952 value_loss=0.0315 val_loss=3.2106 val_legal_acc=0.0431 val_top5=0.1752 val_top10=0.3262 val_policy_acc=0.0000
+epoch=060 lr=4.39e-05 train_loss=1.1233 policy_loss=1.0937 value_loss=0.0296 val_loss=3.2324 val_legal_acc=0.0431 val_top5=0.1797 val_top10=0.3272 val_policy_acc=0.0000
+epoch=061 lr=3.99e-05 train_loss=1.1189 policy_loss=1.0897 value_loss=0.0292 val_loss=3.2340 val_legal_acc=0.0426 val_top5=0.1762 val_top10=0.3257 val_policy_acc=0.0000
+epoch=062 lr=3.59e-05 train_loss=1.1102 policy_loss=1.0814 value_loss=0.0288 val_loss=3.2345 val_legal_acc=0.0427 val_top5=0.1777 val_top10=0.3270 val_policy_acc=0.0000
+epoch=063 lr=3.22e-05 train_loss=1.1088 policy_loss=1.0798 value_loss=0.0290 val_loss=3.2465 val_legal_acc=0.0434 val_top5=0.1766 val_top10=0.3277 val_policy_acc=0.0000
+epoch=064 lr=2.86e-05 train_loss=1.1017 policy_loss=1.0725 value_loss=0.0292 val_loss=3.2680 val_legal_acc=0.0435 val_top5=0.1779 val_top10=0.3254 val_policy_acc=0.0000
+epoch=065 lr=2.53e-05 train_loss=1.1024 policy_loss=1.0740 value_loss=0.0285 val_loss=3.2472 val_legal_acc=0.0438 val_top5=0.1782 val_top10=0.3270 val_policy_acc=0.0000
+epoch=066 lr=2.21e-05 train_loss=1.0952 policy_loss=1.0662 value_loss=0.0290 val_loss=3.2754 val_legal_acc=0.0443 val_top5=0.1768 val_top10=0.3268 val_policy_acc=0.0000
+epoch=067 lr=1.91e-05 train_loss=1.0924 policy_loss=1.0638 value_loss=0.0286 val_loss=3.2527 val_legal_acc=0.0439 val_top5=0.1768 val_top10=0.3278 val_policy_acc=0.0000
+epoch=068 lr=1.63e-05 train_loss=1.0886 policy_loss=1.0601 value_loss=0.0285 val_loss=3.2599 val_legal_acc=0.0431 val_top5=0.1771 val_top10=0.3273 val_policy_acc=0.0000
+epoch=069 lr=1.38e-05 train_loss=1.0850 policy_loss=1.0577 value_loss=0.0273 val_loss=3.2863 val_legal_acc=0.0446 val_top5=0.1766 val_top10=0.3262 val_policy_acc=0.0000
+epoch=070 lr=1.14e-05 train_loss=1.0860 policy_loss=1.0580 value_loss=0.0280 val_loss=3.2688 val_legal_acc=0.0446 val_top5=0.1785 val_top10=0.3260 val_policy_acc=0.0000
+epoch=071 lr=9.27e-06 train_loss=1.0863 policy_loss=1.0584 value_loss=0.0279 val_loss=3.2670 val_legal_acc=0.0442 val_top5=0.1762 val_top10=0.3245 val_policy_acc=0.0000
+epoch=072 lr=7.34e-06 train_loss=1.0804 policy_loss=1.0527 value_loss=0.0277 val_loss=3.2675 val_legal_acc=0.0442 val_top5=0.1783 val_top10=0.3270 val_policy_acc=0.0000
+epoch=073 lr=5.63e-06 train_loss=1.0808 policy_loss=1.0538 value_loss=0.0270 val_loss=3.2786 val_legal_acc=0.0447 val_top5=0.1782 val_top10=0.3265 val_policy_acc=0.0000
+epoch=074 lr=4.14e-06 train_loss=1.0753 policy_loss=1.0486 value_loss=0.0267 val_loss=3.2751 val_legal_acc=0.0439 val_top5=0.1787 val_top10=0.3258 val_policy_acc=0.0000
+epoch=075 lr=2.88e-06 train_loss=1.0809 policy_loss=1.0526 value_loss=0.0282 val_loss=3.2759 val_legal_acc=0.0446 val_top5=0.1797 val_top10=0.3250 val_policy_acc=0.0000
+epoch=076 lr=1.85e-06 train_loss=1.0764 policy_loss=1.0482 value_loss=0.0282 val_loss=3.2716 val_legal_acc=0.0439 val_top5=0.1802 val_top10=0.3253 val_policy_acc=0.0000
+epoch=077 lr=1.04e-06 train_loss=1.0755 policy_loss=1.0478 value_loss=0.0277 val_loss=3.2743 val_legal_acc=0.0443 val_top5=0.1787 val_top10=0.3246 val_policy_acc=0.0000
+epoch=078 lr=4.62e-07 train_loss=1.0758 policy_loss=1.0491 value_loss=0.0267 val_loss=3.2818 val_legal_acc=0.0443 val_top5=0.1790 val_top10=0.3253 val_policy_acc=0.0000
+epoch=079 lr=1.16e-07 train_loss=1.0766 policy_loss=1.0488 value_loss=0.0279 val_loss=3.2784 val_legal_acc=0.0449 val_top5=0.1802 val_top10=0.3256 val_policy_acc=0.0000
+epoch=080 lr=0.00e+00 train_loss=1.0752 policy_loss=1.0486 value_loss=0.0266 val_loss=3.2800 val_legal_acc=0.0442 val_top5=0.1791 val_top10=0.3250 val_policy_acc=0.0000
+
+Saved final checkpoint: artifacts\cnn_policy_value.pt
+Best val_loss: 2.2527 → artifacts\cnn_policy_value.best.pt

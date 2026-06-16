@@ -104,9 +104,13 @@ public sealed class MctsAiService
             }
             else
             {
-                // Expand + evaluate with NN
+                // Expand + evaluate with NN (single inference, value cached in ExpandNode)
                 ExpandNode(node, currentHistory);
-                value = _neural.EvaluatePosition(node.Board, node.Side);
+                // CachedValue is already from current player's perspective for V5 models.
+                // For legacy models, flip for Black.
+                value = _neural.IsV5Model
+                    ? node.CachedValue
+                    : (node.Side == Side.Red ? node.CachedValue : -node.CachedValue);
             }
 
             // 3. Backpropagation
@@ -138,11 +142,31 @@ public sealed class MctsAiService
             return;
         }
 
-        // Get policy distribution from NN
-        var policyDist = _neural.GetPolicyDistribution(node.Board, node.Side, history);
-        var probByAction = policyDist.ToDictionary(
-            x => MoveEncoder.Encode(x.Move),
-            x => x.Probability);
+        // Get BOTH policy and value from a single NN inference (avoids duplicate RunInference call)
+        var (policyLogits, valuePred) = _neural.RunInference(node.Board, node.Side);
+        node.CachedValue = valuePred[0];  // Cache value for use in Search loop
+
+        // Convert policy logits to probabilities (softmax over legal moves)
+        var legalActionIds = legalMoves.Select(m => MoveEncoder.Encode(m)).ToArray();
+        var legalLogits = new float[legalActionIds.Length];
+        for (var i = 0; i < legalActionIds.Length; i++)
+            legalLogits[i] = policyLogits[0, legalActionIds[i]];
+
+        // Softmax
+        var maxLogit = legalLogits.Max();
+        var expSum = 0f;
+        for (var i = 0; i < legalLogits.Length; i++)
+        {
+            legalLogits[i] = MathF.Exp(legalLogits[i] - maxLogit);
+            expSum += legalLogits[i];
+        }
+        var probs = new float[legalActionIds.Length];
+        for (var i = 0; i < probs.Length; i++)
+            probs[i] = legalLogits[i] / expSum;
+
+        var probByAction = new Dictionary<int, float>();
+        for (var i = 0; i < legalActionIds.Length; i++)
+            probByAction[legalActionIds[i]] = probs[i];
 
         node.Children = new MctsNode[MoveEncoder.ActionCount];
         node.ChildMoves = new Move?[MoveEncoder.ActionCount];
@@ -313,6 +337,12 @@ internal sealed class MctsNode
     public float[]? ChildW { get; set; }
     public float[]? ChildP { get; set; }
     public int[]? LegalActionIds { get; set; }
+
+    /// <summary>
+    /// Cached value prediction from NN (current player's perspective).
+    /// Set during ExpandNode to avoid a second NN inference call.
+    /// </summary>
+    public float CachedValue { get; set; }
 
     public MctsNode(MctsNode? parent, float prior, Piece?[,] board, Side side)
     {

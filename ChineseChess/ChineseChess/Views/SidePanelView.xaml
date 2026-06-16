@@ -180,8 +180,8 @@
                                    Foreground="#6D28D9"
                                    Margin="0,0,0,4"/>
                         <Slider Minimum="100"
-                                Maximum="2000"
-                                TickFrequency="100"
+                                Maximum="4000"
+                                TickFrequency="200"
                                 IsSnapToTickEnabled="True"
                                 Value="{Binding MctsSimulations, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     </StackPanel>

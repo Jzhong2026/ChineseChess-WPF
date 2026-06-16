@@ -55,7 +55,7 @@ public sealed class XiangqiAiService
             return new AiSearchResult(PickBasicMove(board, legalMoves, side), new SearchStats(2, legalMoves.Count, watch.Elapsed.TotalMilliseconds, 0));
         }
 
-        var maxDepth = level == 3 ? 4 : 6;
+        var maxDepth = level == 3 ? 4 : 8;
         var deadline = watch.ElapsedMilliseconds + Math.Max(30, timeLimitMs);
         var nodes = 0;
         var ttHits = 0;

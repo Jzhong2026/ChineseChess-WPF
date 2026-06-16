@@ -1,0 +1,30 @@
+Loaded 74643 samples (0 skipped).
+Train: 67178, Val: 7465
+Loaded V6 checkpoint: artifacts/cnn_policy_value_v6.epoch10.pt
+  Loaded 89 params, skipped 9 (policy head)
+  Skipped keys: ['policy_conv.weight', 'policy_bn.weight', 'policy_bn.bias', 'policy_bn.running_mean', 'policy_bn.running_var']...
+Model: CNN Full Policy channels=64, res_blocks=6, policy_channels=8, total_params=6,317,495 (6.32M)
+C:\Users\jason\AppData\Local\Programs\Python\Python314\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+epoch=001 lr=9.98e-05 train_loss=4.8006 train_acc=0.0446 val_loss=4.3666 val_acc=0.0435 val_top5=0.1798 val_top10=0.3206
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+epoch=002 lr=9.94e-05 train_loss=4.2376 train_acc=0.0467 val_loss=4.1252 val_acc=0.0469 val_top5=0.1873 val_top10=0.3297
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+epoch=003 lr=9.86e-05 train_loss=3.9238 train_acc=0.0502 val_loss=3.8536 val_acc=0.0477 val_top5=0.1956 val_top10=0.3407
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+epoch=004 lr=9.76e-05 train_loss=3.6450 train_acc=0.0554 val_loss=3.6985 val_acc=0.0489 val_top5=0.1954 val_top10=0.3374
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+epoch=005 lr=9.62e-05 train_loss=3.4331 train_acc=0.0596 val_loss=3.5619 val_acc=0.0458 val_top5=0.1898 val_top10=0.3384
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+  💾 Periodic checkpoint saved: cnn_policy_value_v7.epoch5.pt
+epoch=006 lr=9.46e-05 train_loss=3.2654 train_acc=0.0646 val_loss=3.4588 val_acc=0.0502 val_top5=0.1941 val_top10=0.3441
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+epoch=007 lr=9.26e-05 train_loss=3.1299 train_acc=0.0708 val_loss=3.3959 val_acc=0.0470 val_top5=0.1890 val_top10=0.3368
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+epoch=008 lr=9.05e-05 train_loss=3.0207 train_acc=0.0750 val_loss=3.3521 val_acc=0.0488 val_top5=0.1890 val_top10=0.3416
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+epoch=009 lr=8.80e-05 train_loss=2.9335 train_acc=0.0808 val_loss=3.3350 val_acc=0.0480 val_top5=0.1901 val_top10=0.3377
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+epoch=010 lr=8.54e-05 train_loss=2.8470 train_acc=0.0876 val_loss=3.3178 val_acc=0.0474 val_top5=0.1902 val_top10=0.3372
+  ✅ Best model saved: cnn_policy_value_v7.best.pt
+  💾 Periodic checkpoint saved: cnn_policy_value_v7.epoch10.pt

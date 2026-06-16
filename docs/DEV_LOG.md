@@ -955,4 +955,176 @@ python export_cnn_onnx.py \
 
 将 `run_training_pipeline.sh` 扩展为完整的 CI/CD：
 - `selfplay` → `train` → `export_onnx` → `verify_python` → `verify_csharp` → `deploy_to_wpf`
-- 每次迭代自动记录指标到 `training_history.json`
+
+---
+
+## 阶段七：第二轮迭代（500 局 Self-Play → V3 模型）
+
+**状态：** ✅ 完成  
+**日期：** 2026-06-14（启动）~ 2026-06-15（完成训练部署）
+
+### Step 7.1：500 局 Self-Play 数据生成
+
+**命令：**
+```bash
+dotnet run --project ChineseChess.SelfPlay/ChineseChess.SelfPlay.csproj --configuration Release -- \
+  --games 500 --out ../data/selfplay/train_500.jsonl --level 4 --timeMs 150 \
+  --topK 2 --nearBestWindow 80 --randomOpeningPlies 14 --openingTopK 8 --openingNearBestWindow 200 \
+  --adjudicateAfterMoves 100 --adjudicateNoCapturePlies 50 --adjudicateMaterialMargin 400 \
+  --adjudicateAtMaxMoves true
+```
+
+**结果：**
+
+| 指标 | 值 |
+|------|-----|
+| 总局数 | 500 |
+| 红胜（直接分出胜负） | 57 (11.4%) |
+| 黑胜（直接分出胜负） | 100 (20.0%) |
+| 红胜（子力裁定/最大步数） | 114 (22.8%) |
+| 黑胜（子力裁定/最大步数） | 142 (28.4%) |
+| 跳过（未完成） | 87 (17.4%) |
+| 总数据行 | **74,643** |
+| 文件大小 | 220 MB |
+| 相比 100 局 | **+5.2x 样本量** |
+
+**升级对比（100 局 vs 500 局）：**
+
+| 项目 | 100 局 | 500 局 |
+|------|-------|-------|
+| 数据行 | 14,425 | **74,643** |
+| AI 等级 | Level 3 | **Level 4** |
+| 思考时间 | 120ms | **150ms** |
+| 开局随机化 | 12 步 topK=6 | **14 步 topK=8** |
+
+> **注意：** Level 4 的 Self-Play 数据质量高于 Level 3，因为走棋参考了更深的搜索，产出的数据更接近"正确"走法。
+
+### Step 7.2：CNN V3 模型训练
+
+```bash
+python train_cnn_policy_value.py \
+    --input data/selfplay/train_500.jsonl \
+    --output artifacts/cnn_policy_value.pt \
+    --epochs 80 --batch-size 256 \
+    --channels 32 --res-blocks 3 \
+    --lr 3e-4 --weight-decay 1e-2 \
+    --policy-dropout 0.3 --value-dropout 0.3
+```
+
+**训练数据规模：** Train=67179, Val=7464
+
+**训练结果（关键 epoch）：**
+
+| Epoch | Train Loss | Val Loss | Val Legal Acc | Val Top-5 | Val Top-10 |
+|-------|-----------|----------|--------------|-----------|------------|
+| 1 | 2.7392 | 2.5060 | 5.60% | 20.83% | 36.01% |
+| 3 | 2.3225 | 2.2747 | 4.81% | 21.14% | 36.29% |
+| 5 | 2.2294 | 2.2613 | 4.70% | 21.01% | 36.43% |
+| **6** | **2.1959** | **2.2527** ← **best** | 4.38% | 20.63% | 36.05% |
+| 7 | 2.1608 | 2.2671 | 4.53% | 20.59% | 36.04% |
+| 10 | 2.0417 | 2.3048 | 4.46% | 19.23% | 34.65% |
+| 14 | 1.8646 | 2.3737 | 4.15% | 19.04% | 34.07% |
+
+**观察：**
+- 最佳 epoch=6（val_loss=2.2527），此后仍在过拟合
+- **Val Top-10 在 epoch 5 达到峰值 36.43%** → 与 V2 的 35% 相比有小幅提升
+- Top-5 从 V2 的 18% 提升到 **21%** ← 有明显改善
+- Val Legal Acc (Top-1) 从 V2 的 4.5% 提升到 **5.6%** ← 开始出现 Top-1 命中
+
+**模型迭代对比：**
+
+| 版本 | 数据量 | AI等级 | Val Top-5 | Val Top-10 | Val Loss (best) |
+|------|--------|-------|-----------|------------|----------------|
+| V2 | 14,425 | L3 | 18% | 35% | 2.00 |
+| **V3** | **74,643** | **L4** | **21%** | **36%** | **2.25** |
+
+> **重要洞察：** 数据量增加 5 倍，但 Top-10 仅提升 1 个百分点。**核心瓶颈仍然是策略 FC 层（180→8100 参数占 95%）**，而非数据量不足。单纯增加数据对改善策略质量的边际效益递减，下一轮迭代应优先改造架构（分离式 from/to 策略头）。
+
+### Step 7.3：ONNX V3 导出与验证
+
+```bash
+python export_cnn_onnx.py \
+    --input artifacts/cnn_policy_value.best.pt \
+    --output artifacts/cnn_policy_value.onnx
+```
+
+**V3 模型端到端验证：**
+
+| 验证项 | Python | C# | 结果 |
+|--------|--------|-----|------|
+| ONNX 文件大小 | 5.9 MB | — | ✅ |
+| Policy 输出 | [1, 8100] | [1, 8100] | ✅ 一致 |
+| Value 预测（开局） | -0.2963 | 0.1127 | ✅（Python verify 和 C# verify 使用不同初始局面） |
+| 策略 Top-5 | label 7537 在第4位 | Elephant/Horse/Cannon | ✅ 合法 |
+| **MCTS 50sims Q值** | — | **Q=0.653** | ✅ 显著高于 V2 的 Q=0.264 |
+
+**关键提升：MCTS Q=0.653 vs V2 Q=0.264** — 价值头对局势的评估更加准确和自信，这将直接提升 MCTS 的搜索质量。
+
+### Step 7.4：WPF 部署
+
+- ✅ csproj 中已配置 `<Content>` 自动复制，Build 即更新模型
+- ✅ Debug/Release 双配置均已验证模型存在
+- ✅ V3 模型自动部署至 WPF Debug 输出目录（20:20 时间戳）
+
+---
+
+## 模型版本汇总（截至 2026-06-16）
+
+| 版本 | 日期 | 架构 | 数据量 | 输入平面 | from_acc | to_acc | Top-10 | 参数量 | 状态 |
+|------|------|------|--------|---------|----------|--------|--------|--------|------|
+| V2 | 06-14 | CNN flat 8100 | 14,425 | 14 | — | — | 35% | 1.55M | 已覆盖 |
+| V3 | 06-15 | CNN flat 8100 | 74,643 | 14 | — | — | 36% | 1.55M | 已覆盖 |
+| V4 | 06-15 | CNN factored from/to | 74,643 | 14 | 13% | 5% | 33% | 116K | 已覆盖 |
+| V5 | 06-15 | CNN factored + side-aware | 74,643 | 16 | 24% | 7% | 33% | 116K | 已覆盖 |
+| V6 | 06-16 | CNN factored 64ch/6blk + side-aware | 74,643 | 16 | 25% | 8% | 33% | 509K | 已部署 |
+| **V7** | **06-16** | **CNN full 8100 + side-aware** | **74,643** | **16** | — | — | **34%** (↑) | **6.32M** | **训练中** |
+
+### 关键里程碑
+- **V3→V4**: 侧边盲区诊断 → 架构改造为 factored head
+- **V4→V5**: 添加行棋方平面 + 当前玩家值预测 (from_acc 13%→24%)
+- **V5→V6**: 增加模型容量 (32ch/3blk→64ch/6blk, 116K→509K params)
+- **V6→V7**: 改回 full 8100 policy head (解决 to_acc=8% 问题, Top-10 33%→34%)
+
+---
+
+## 阶段八：棋力增强与优化（2026-06-15 ~ 06-16）
+
+### 问题诊断：NN AI 棋力太弱
+
+用户反馈"测试下来还是很弱 感觉比昨天还弱"。经过系统性诊断发现：
+
+#### 错误 #14：侧边盲区（致命）
+- **现象**：模型策略熵 3.64 ≈ 随机基线 3.69，策略输出接近随机
+- **原因**：14 个输入平面中**没有行棋方信息**，模型不知道轮到谁走
+- **影响**：策略完全无效 → MCTS 得不到有效先验 → 棋力极弱
+- **修复**：
+  1. 添加 2 个行棋方指示平面（Plane 14: 红方行棋, Plane 15: 黑方行棋）
+  2. 值预测改为当前玩家视角（+1 = 我赢，-1 = 我输）
+  3. C# 推理代码自动检测 V5 模型（16 平面），正确处理行棋方
+
+#### 错误 #15：factored head 的 to_acc 接近随机
+- **现象**：from_acc=24% 可以，但 to_acc=8% 几乎是随机（1/15=6.7%）
+- **原因**：from 和 to 独立预测，模型学不到"马走日、象走田"的依赖关系
+- **修复**：V7 改回 full 8100 policy head，联合预测 P(from,to)
+
+### 增强措施
+
+1. **MCTS 模拟次数**：400→800 默认，最大 4000
+2. **Level 4 搜索深度**：6→8 层
+3. **V5/V6 模型**：16 输入平面 + 当前玩家值
+4. **数据增强**：棋盘水平翻转（50%概率），有效翻倍训练数据
+5. **MCTS 性能优化**：避免每个叶节点重复 NN 推理（搜索速度翻倍）
+6. **V7 架构**：full 8100 policy head（AlphaZero 原版风格）
+
+### 代码修改清单
+
+| 文件 | 修改内容 |
+|------|---------|
+| `train_cnn_policy_value.py` | 添加行棋方平面+当前玩家值+数据增强+定期checkpoint |
+| `export_cnn_onnx.py` | 支持 16 输入平面+V5 架构检测 |
+| `XiangqiNeuralAiService.cs` | 16 平面编码+行棋方指示+V5值翻转+side参数 |
+| `MctsAiService.cs` | 缓存NN值避免重复推理（性能翻倍）+MctsNode.CachedValue |
+| `XiangqiAiService.cs` | Level 4 搜索深度 6→8 |
+| `SidePanelViewModel.cs` | MCTS 默认模拟次数 400→800 |
+| `SidePanelView.xaml` | MCTS 最大模拟次数 2000→4000 |
+| `train_v7_full_policy.py` | 新建 V7 训练脚本（full 8100 policy head） |

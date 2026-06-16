@@ -22,7 +22,7 @@ public sealed class SidePanelViewModel : Screen, IHandle<BoardStateChangedMessag
     private bool _isRedTurn = true;
     private AiEngineMode _aiEngineMode = AiEngineMode.Classic;
     private string? _neuralAiInfo;
-    private int _mctsSimulations = 400;
+    private int _mctsSimulations = 800;
 
     public SidePanelViewModel(IEventAggregator events, XiangqiEngine engine)
     {

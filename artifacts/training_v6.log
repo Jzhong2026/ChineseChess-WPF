@@ -1,0 +1,26 @@
+Loaded 74643 samples (0 skipped).
+Train: 67179, Val: 7464
+Model: CNN Factored channels=64, res_blocks=6, total_params=509,579, policy_head_params=32,580
+Device: cpu
+C:\Users\jason\AppData\Local\Programs\Python\Python314\Lib\site-packages\torch\utils\data\dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+epoch=001 lr=3.00e-04 train_loss=6.0481 policy_loss=5.4194 value_loss=0.6287 val_loss=5.8633 val_from_acc=0.0690 val_to_acc=0.0616 val_legal_acc=0.0446 val_top5=0.1720 val_top10=0.3127 val_policy_acc=0.0050
+epoch=002 lr=3.00e-04 train_loss=5.6841 policy_loss=5.1672 value_loss=0.5169 val_loss=5.4325 val_from_acc=0.1636 val_to_acc=0.0658 val_legal_acc=0.0427 val_top5=0.1807 val_top10=0.3249 val_policy_acc=0.0092
+epoch=003 lr=2.99e-04 train_loss=5.2788 policy_loss=4.8810 value_loss=0.3978 val_loss=5.1491 val_from_acc=0.2186 val_to_acc=0.0705 val_legal_acc=0.0442 val_top5=0.1766 val_top10=0.3266 val_policy_acc=0.0121
+epoch=004 lr=2.98e-04 train_loss=4.9878 policy_loss=4.6606 value_loss=0.3271 val_loss=4.8570 val_from_acc=0.2255 val_to_acc=0.0741 val_legal_acc=0.0462 val_top5=0.1766 val_top10=0.3190 val_policy_acc=0.0134
+  💾 Periodic checkpoint saved: cnn_policy_value_v6.epoch5.pt
+epoch=005 lr=2.97e-04 train_loss=4.7724 policy_loss=4.5004 value_loss=0.2720 val_loss=4.7528 val_from_acc=0.2477 val_to_acc=0.0711 val_legal_acc=0.0478 val_top5=0.1822 val_top10=0.3294 val_policy_acc=0.0119
+epoch=006 lr=2.96e-04 train_loss=4.6225 policy_loss=4.3815 value_loss=0.2410 val_loss=4.5398 val_from_acc=0.2426 val_to_acc=0.0770 val_legal_acc=0.0490 val_top5=0.1814 val_top10=0.3226 val_policy_acc=0.0155
+epoch=007 lr=2.94e-04 train_loss=4.5097 policy_loss=4.2976 value_loss=0.2122 val_loss=4.4411 val_from_acc=0.2464 val_to_acc=0.0773 val_legal_acc=0.0480 val_top5=0.1886 val_top10=0.3311 val_policy_acc=0.0141
+epoch=008 lr=2.93e-04 train_loss=4.4231 policy_loss=4.2307 value_loss=0.1924 val_loss=4.3711 val_from_acc=0.2442 val_to_acc=0.0761 val_legal_acc=0.0476 val_top5=0.1862 val_top10=0.3304 val_policy_acc=0.0119
+epoch=009 lr=2.91e-04 train_loss=4.3492 policy_loss=4.1713 value_loss=0.1778 val_loss=4.3826 val_from_acc=0.2458 val_to_acc=0.0800 val_legal_acc=0.0461 val_top5=0.1889 val_top10=0.3337 val_policy_acc=0.0150
+  💾 Periodic checkpoint saved: cnn_policy_value_v6.epoch10.pt
+epoch=010 lr=2.89e-04 train_loss=4.2910 policy_loss=4.1260 value_loss=0.1651 val_loss=4.2979 val_from_acc=0.2484 val_to_acc=0.0695 val_legal_acc=0.0469 val_top5=0.1817 val_top10=0.3268 val_policy_acc=0.0121
+epoch=011 lr=2.86e-04 train_loss=4.2378 policy_loss=4.0860 value_loss=0.1518 val_loss=4.4267 val_from_acc=0.2374 val_to_acc=0.0782 val_legal_acc=0.0450 val_top5=0.1814 val_top10=0.3187 val_policy_acc=0.0107
+epoch=012 lr=2.84e-04 train_loss=4.1959 policy_loss=4.0556 value_loss=0.1403 val_loss=4.2529 val_from_acc=0.2529 val_to_acc=0.0797 val_legal_acc=0.0490 val_top5=0.1880 val_top10=0.3311 val_policy_acc=0.0171
+epoch=013 lr=2.81e-04 train_loss=4.1553 policy_loss=4.0253 value_loss=0.1300 val_loss=4.2753 val_from_acc=0.2452 val_to_acc=0.0788 val_legal_acc=0.0506 val_top5=0.1921 val_top10=0.3382 val_policy_acc=0.0163
+epoch=014 lr=2.78e-04 train_loss=4.1195 policy_loss=3.9982 value_loss=0.1213 val_loss=4.2031 val_from_acc=0.2546 val_to_acc=0.0740 val_legal_acc=0.0485 val_top5=0.1844 val_top10=0.3290 val_policy_acc=0.0147
+  💾 Periodic checkpoint saved: cnn_policy_value_v6.epoch15.pt
+epoch=015 lr=2.75e-04 train_loss=4.0863 policy_loss=3.9689 value_loss=0.1175 val_loss=4.2025 val_from_acc=0.2453 val_to_acc=0.0816 val_legal_acc=0.0474 val_top5=0.1888 val_top10=0.3317 val_policy_acc=0.0126
+epoch=016 lr=2.71e-04 train_loss=4.0596 policy_loss=3.9493 value_loss=0.1104 val_loss=4.2450 val_from_acc=0.2481 val_to_acc=0.0744 val_legal_acc=0.0482 val_top5=0.1880 val_top10=0.3333 val_policy_acc=0.0122
+epoch=017 lr=2.68e-04 train_loss=4.0328 policy_loss=3.9272 value_loss=0.1057 val_loss=4.1550 val_from_acc=0.2483 val_to_acc=0.0798 val_legal_acc=0.0484 val_top5=0.1937 val_top10=0.3392 val_policy_acc=0.0158
