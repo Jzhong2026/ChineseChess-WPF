@@ -127,10 +127,12 @@ AlphaBeta(alpha, beta, depth, ...):
 
 ## 五、演示代码
 
-本目录包含 3 个渐进式 Demo：
+本目录包含 5 个渐进式 Demo：
 
 | Demo | 语言 | 内容 |
 |------|------|------|
 | 1 | Python | QSearch + TT 基础概念，纯函数式，< 100 行 |
 | 2 | Python + C# | 完整 Minimax + QSearch + TT 的井字棋 |
 | 3 | Python + C# | 在简化象棋上集成 QSearch + TT 到现有引擎 |
+| 4 | Python + C# | 神经网络棋盘编码、走法编码、CNN 输入重排、factored policy 解码 |
+| 5 | Python | 自博弈 JSONL 样本校验、policy/value 训练标签、legal mask |

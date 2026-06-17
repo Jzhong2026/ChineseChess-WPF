@@ -1,5 +1,10 @@
 # ChineseChess-WPF
 
+## 项目介绍文档
+
+- [面试项目介绍与技术复盘](docs/INTERVIEW_PROJECT_GUIDE.md)：适合面试时介绍项目开发过程、技术细节、问题排查和项目亮点。
+- [开发日志](docs/DEV_LOG.md)：记录 AI 训练、ONNX 集成、MCTS 优化等迭代过程。
+
 ## Self-play 数据生成
 
 `ChineseChess.SelfPlay` 会输出 JSONL，每一行是一个可直接供 `train_chinese_chess_policy_value.py` 使用的局面样本。默认参数已调成更适合训练数据采样的配置：
