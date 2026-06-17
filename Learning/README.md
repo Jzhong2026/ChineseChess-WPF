@@ -127,7 +127,7 @@ AlphaBeta(alpha, beta, depth, ...):
 
 ## 五、演示代码
 
-本目录包含 5 个渐进式 Demo：
+本目录包含一组渐进式 Demo：
 
 | Demo | 语言 | 内容 |
 |------|------|------|
@@ -136,3 +136,7 @@ AlphaBeta(alpha, beta, depth, ...):
 | 3 | Python + C# | 在简化象棋上集成 QSearch + TT 到现有引擎 |
 | 4 | Python + C# | 神经网络棋盘编码、走法编码、CNN 输入重排、factored policy 解码 |
 | 5 | Python | 自博弈 JSONL 样本校验、policy/value 训练标签、legal mask |
+| 6 | Python | PyTorch MNIST 图像分类 |
+| 7 | Python | PyTorch 表格回归 |
+| 8 | Python | PyTorch 文本分类 |
+| 9 | Python | 本地知识库 RAG、placeholder LLM、大模型配置预留 |

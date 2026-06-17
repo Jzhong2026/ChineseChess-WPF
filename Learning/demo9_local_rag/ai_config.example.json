@@ -1,0 +1,8 @@
+{
+  "provider": "openai-compatible",
+  "api_key": "",
+  "base_url": "",
+  "model": "",
+  "temperature": 0.2,
+  "timeout_seconds": 60
+}

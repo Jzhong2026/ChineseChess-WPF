@@ -15,7 +15,11 @@
 /ChineseChess/ChineseChess.SelfPlay/obj
 /data/
 *.jsonl
+__pycache__/
+*.pyc
 /ChineseChess/ChineseChess/bin
 /ChineseChess/ChineseChess.Core/bin
 /ChineseChess/ChineseChess.Core.Verification/bin
 /ChineseChess/ChineseChess.SelfPlay/bin
+Learning/demo9_local_rag/index.json
+Learning/demo9_local_rag/ai_config.json
