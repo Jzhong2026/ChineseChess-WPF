@@ -5,6 +5,16 @@
 
 ---
 
+## 项目完整教程
+
+👉 **[TUTORIAL/README.md](TUTORIAL/README.md)** — 从零构建 AlphaZero 风格象棋 AI 的完整教程
+
+涵盖：
+- **第一篇：基础篇** — 象棋引擎、评估函数、Minimax/Alpha-Beta、QSearch、TT
+- **第二篇：进阶篇** — 棋盘编码、CNN 网络、自对弈、训练、ONNX 导出、MCTS
+- **第三篇：实战篇** — C# ONNX 集成、WPF 界面、对弈测试、并行加速、内存优化
+- **快速开始**、**学习路径推荐**、**所有重要方法清单**
+
 ## 一、Quiescence Search（静态搜索/静止搜索）
 
 ### 是什么
