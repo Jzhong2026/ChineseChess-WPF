@@ -10,7 +10,7 @@ var onnxModelPath = "cnn_policy_value.onnx";
 var hardAiLevel = 4;         // Level 4 = 8-ply Alpha-Beta + QSearch
 var hardAiTimeMs = 5000;     // 5 seconds per move for classic AI
 var useMcts = true;          // true = MCTS+NN, false = pure NN policy
-var mctsSimulations = 600;   // MCTS simulations per move
+var mctsSimulations = 3000;  // MCTS simulations per move (bumped from 600 for V8 test)
 var mctsTimeLimitMs = 5000;  // MCTS time limit per move
 
 // ─── Results ─────────────────────────────────────────────────────────────────

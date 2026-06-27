@@ -1,0 +1,113 @@
+══════════════════════════════════════════════════════════════════════
+  中国象棋 AI 对弈测试 — ONNX 神经网络 vs 经典困难模式 (Level 4)
+══════════════════════════════════════════════════════════════════════
+
+  ONNX 模型: cnn_policy_value.onnx
+  经典 AI:   深度 8 层 Alpha-Beta + QSearch
+  思考时间:   经典 AI 每步 5000ms
+  NN 模式:    MCTS + 神经网络 (600 sims)
+  总局数:     20 局（轮流执红/黑）
+
+正在加载 ONNX 模型...
+  ? 模型加载成功 (架构: Factored, V5/16平面)
+
+
+第  1 局 — ONNX(红) vs Classic(黑) ... 黑方将杀 | 48步 | 240s
+          ONNX avg: 4988.3ms, Classic avg: 5028.8ms
+
+第  2 局 — ONNX(黑) vs Classic(红) ... 红方将杀 | 43步 | 199s
+          ONNX avg: 4203.0ms, Classic avg: 5015.8ms
+
+第  3 局 — ONNX(红) vs Classic(黑) ... 黑方将杀 | 46步 | 211s
+          ONNX avg: 4143.1ms, Classic avg: 5013.6ms
+
+第  4 局 — ONNX(黑) vs Classic(红) ... 红方将杀 | 23步 | 106s
+          ONNX avg: 4193.9ms, Classic avg: 5014.6ms
+
+第  5 局 — ONNX(红) vs Classic(黑) ... 黑方将杀 | 30步 | 133s
+          ONNX avg: 3871.2ms, Classic avg: 5015.1ms
+
+第  6 局 — ONNX(黑) vs Classic(红) ... 红方将杀 | 17步 | 77s
+          ONNX avg: 4034.9ms, Classic avg: 5015.0ms
+
+第  7 局 — ONNX(红) vs Classic(黑) ... 黑方将杀 | 18步 | 79s
+          ONNX avg: 3804.5ms, Classic avg: 5017.2ms
+
+第  8 局 — ONNX(黑) vs Classic(红) ... 红方将杀 | 13步 | 58s
+          ONNX avg: 3801.9ms, Classic avg: 5004.9ms
+
+第  9 局 — ONNX(红) vs Classic(黑) ... 黑方将杀 | 30步 | 132s
+          ONNX avg: 3812.5ms, Classic avg: 5013.7ms
+
+第 10 局 — ONNX(黑) vs Classic(红) ... 红方将杀 | 59步 | 259s
+          ONNX avg: 3737.5ms, Classic avg: 5010.6ms
+
+第 11 局 — ONNX(红) vs Classic(黑) ... 黑方将杀 | 82步 | 382s
+          ONNX avg: 4283.5ms, Classic avg: 5024.7ms
+
+第 12 局 — ONNX(黑) vs Classic(红) ... 三次重复局面 | 59步 | 283s
+          ONNX avg: 4552.4ms, Classic avg: 5024.3ms
+
+第 13 局 — ONNX(红) vs Classic(黑) ... 黑方将杀 | 18步 | 88s
+          ONNX avg: 4724.1ms, Classic avg: 5009.6ms
+
+第 14 局 — ONNX(黑) vs Classic(红) ... 红方将杀 | 45步 | 226s
+          ONNX avg: 5013.4ms, Classic avg: 5026.4ms
+
+第 15 局 — ONNX(红) vs Classic(黑) ... 黑方将杀 | 44步 | 216s
+          ONNX avg: 4789.1ms, Classic avg: 5041.1ms
+
+第 16 局 — ONNX(黑) vs Classic(红) ... 红方将杀 | 61步 | 275s
+          ONNX avg: 3977.6ms, Classic avg: 5015.0ms
+
+第 17 局 — ONNX(红) vs Classic(黑) ... 黑方将杀 | 48步 | 219s
+          ONNX avg: 4097.5ms, Classic avg: 5015.8ms
+
+第 18 局 — ONNX(黑) vs Classic(红) ... 红方将杀 | 37步 | 166s
+          ONNX avg: 3904.8ms, Classic avg: 5014.0ms
+
+第 19 局 — ONNX(红) vs Classic(黑) ... 三次重复局面 | 86步 | 402s
+          ONNX avg: 4332.5ms, Classic avg: 5011.2ms
+
+第 20 局 — ONNX(黑) vs Classic(红) ... 红方将杀 | 25步 | 114s
+          ONNX avg: 4039.3ms, Classic avg: 5022.0ms
+
+══════════════════════════════════════════════════════════════════════
+  对局结果汇总
+══════════════════════════════════════════════════════════════════════
+
+  总局数:     20
+  ONNX 胜:     0  (  0.0%)
+  Classic 胜: 18  ( 90.0%)
+  和棋:        2  ( 10.0%)
+
+  ONNX 执红: 0胜 / 9负 / 1和
+  ONNX 执黑: 0胜 / 9负 / 1和
+
+  详细对局日志:
+    局号        ONNX方         结果    步数 原因                  
+  ───────────────────────────────────────────────────────
+     1      ONNX(红) ? Classic     48 黑方将杀                
+     2      ONNX(黑) ? Classic     43 红方将杀                
+     3      ONNX(红) ? Classic     46 黑方将杀                
+     4      ONNX(黑) ? Classic     23 红方将杀                
+     5      ONNX(红) ? Classic     30 黑方将杀                
+     6      ONNX(黑) ? Classic     17 红方将杀                
+     7      ONNX(红) ? Classic     18 黑方将杀                
+     8      ONNX(黑) ? Classic     13 红方将杀                
+     9      ONNX(红) ? Classic     30 黑方将杀                
+    10      ONNX(黑) ? Classic     59 红方将杀                
+    11      ONNX(红) ? Classic     82 黑方将杀                
+    12      ONNX(黑) ?? Draw       59 三次重复局面              
+    13      ONNX(红) ? Classic     18 黑方将杀                
+    14      ONNX(黑) ? Classic     45 红方将杀                
+    15      ONNX(红) ? Classic     44 黑方将杀                
+    16      ONNX(黑) ? Classic     61 红方将杀                
+    17      ONNX(红) ? Classic     48 黑方将杀                
+    18      ONNX(黑) ? Classic     37 红方将杀                
+    19      ONNX(红) ?? Draw       86 三次重复局面              
+    20      ONNX(黑) ? Classic     25 红方将杀                
+
+══════════════════════════════════════════════════════════════════════
+  对局完成!
+══════════════════════════════════════════════════════════════════════

@@ -55,10 +55,10 @@ class ResidualBlock(nn.Module):
 
 
 class CNNFactoredPolicyValueNet(nn.Module):
-    """V5: 16 input planes (14 piece + 2 side-to-move), factored from/to heads."""
+    """V5/V8: 16 input planes (14 piece + 2 side-to-move), factored from/to heads."""
     def __init__(self, in_channels: int = INPUT_PLANES, channels: int = 128,
                  res_blocks: int = 8, policy_dropout: float = 0.3,
-                 value_dropout: float = 0.3) -> None:
+                 value_dropout: float = 0.3, policy_channels: int = 2) -> None:
         super().__init__()
         self.stem = nn.Sequential(
             nn.Conv2d(in_channels, channels, kernel_size=3, padding=1, bias=False),
@@ -66,11 +66,11 @@ class CNNFactoredPolicyValueNet(nn.Module):
             nn.ReLU(inplace=True),
         )
         self.tower = nn.Sequential(*[ResidualBlock(channels) for _ in range(res_blocks)])
-        self.policy_conv = nn.Conv2d(channels, 2, kernel_size=1, bias=False)
-        self.policy_bn = nn.BatchNorm2d(2)
+        self.policy_conv = nn.Conv2d(channels, policy_channels, kernel_size=1, bias=False)
+        self.policy_bn = nn.BatchNorm2d(policy_channels)
         self.policy_dropout = nn.Dropout(policy_dropout)
-        self.from_fc = nn.Linear(2 * BOARD_SIZE, BOARD_SIZE)
-        self.to_fc = nn.Linear(2 * BOARD_SIZE, BOARD_SIZE)
+        self.from_fc = nn.Linear(policy_channels * BOARD_SIZE, BOARD_SIZE)
+        self.to_fc = nn.Linear(policy_channels * BOARD_SIZE, BOARD_SIZE)
         self.value_conv = nn.Conv2d(channels, 1, kernel_size=1, bias=False)
         self.value_bn = nn.BatchNorm2d(1)
         self.value_dropout1 = nn.Dropout(value_dropout)
@@ -200,9 +200,11 @@ def export(args: argparse.Namespace) -> None:
             policy_dropout=policy_dropout, value_dropout=value_dropout,
             policy_channels=policy_channels)
     elif is_factored:
+        policy_channels = checkpoint.get("policy_channels", 2)
         model = CNNFactoredPolicyValueNet(
             in_channels=model_planes, channels=channels, res_blocks=res_blocks,
-            policy_dropout=policy_dropout, value_dropout=value_dropout)
+            policy_dropout=policy_dropout, value_dropout=value_dropout,
+            policy_channels=policy_channels)
     else:
         model = CNNPolicyValueNet(
             in_channels=model_planes, channels=channels, res_blocks=res_blocks,
