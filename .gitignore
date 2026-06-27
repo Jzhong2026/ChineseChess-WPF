@@ -23,3 +23,15 @@ __pycache__/
 /ChineseChess/ChineseChess.SelfPlay/bin
 Learning/demo9_local_rag/index.json
 Learning/demo9_local_rag/ai_config.json
+/ChineseChess/AiMatchRunner/obj
+/ChineseChess/AiMatchRunner/bin/Release/net8.0
+*.log
+# Exclude training checkpoint files (large binary)
+artifacts/*.pt
+artifacts/*.onnx.bak
+# Exclude self-play data and scripts
+data/selfplay/
+run_selfplay_*.sh
+run_post_selfplay_*.sh
+run_pipeline_*.sh
+launch_detached.py
