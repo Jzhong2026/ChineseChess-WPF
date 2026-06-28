@@ -1226,3 +1226,78 @@ dotnet run --project ChineseChess.SelfPlay -- \
 - **内存瓶颈**：Python 训练脚本将 74K 样本全部加载到内存（4.3GB），当训练数据扩大 5 倍到 ~300K 样本时，预计内存占用 15GB+，需要考虑流式训练方案
 - **训练速度**：CPU 训练 6.32M 参数模型约 7min/epoch，50 epoch ≈ 5.8h。GPU 训练可提速 10-50 倍
 - **自对弈速度**：~1 局/分钟，2000 局 ≈ 33h。瓶颈在 Negamax 搜索，预计 NN 指导的自对弈（AlphaZero 风格）可提速 10+ 倍
+---
+
+## 阶段十:经典 AI 搜索算法 + 评估函数增强
+
+**日期:** 2026-06-28
+**状态:** ✅ 已实施 + 已 push(commits `91082aa`, `b2bceb5`)
+**预估棋力提升:** +130-250 Elo
+
+### 10.1 背景与动机
+
+之前的 `XiangqiAiService`(Level 4 = 8 层 Alpha-Beta + QSearch)虽实现完整,但存在几个明显低效点:
+
+1. **置换表只存 bestMove,不存 score** — 命中也不能做截断,等于没用上 TT 核心价值
+2. **没有 killer move / history heuristic** — move ordering 只用 MVV-LVA,搜索树很"胖"
+3. **评估函数过于简单** — 缺 mobility / king safety / pawn structure
+4. **TT 在每步 `ChooseMove` 开始时清空** — 跨步复用率为零
+
+实测:5s/步只能到 3.6 层,TT 命中率 3.4%,等于是带着 250k 表的空跑。
+
+### 10.2 改动内容
+
+详见 `docs/classic-ai-improvements.md`。要点:
+
+| 改动 | 内容 | 预期影响 |
+|------|------|---------|
+| TT score+flag | TranspositionEntry 加 Score + Flag(EXACT/LOWER/UPPER),支持截断 | +80-120 Elo |
+| History table | int[8100] 跨步累积,β 截断时加分 | +50-80 Elo |
+| Killer moves | Move?[32, 2] 每层深度 2 个,每次搜索清空 | +20-40 Elo |
+| Mobility 评估 | 伪移动性扫描,车/炮/马/兵加权 | +50-100 Elo |
+| King safety | 士象保护 + 攻击将帅区域威胁 | +30-60 Elo |
+| Pawn structure | 过河 + 深入敌境奖励 | +20-40 Elo |
+
+### 10.3 验证数据(20 局对弈 vs MCTS+NN,5s/步)
+
+```
+总局数:      20
+MCTS 胜:      0  (  0.0%)   ← MCTS+NN 被横扫
+Classic 胜:  20  (100.0%)
+和棋:         0
+MCTS 执红:   0胜 / 10负 / 0和
+MCTS 执黑:   0胜 / 10负 / 0和
+
+总体诊断:
+  Classic 平均深度 4.1 | 平均节点/步 30,701 | 平均思考 5008ms
+  Classic TT 命中率 5.9% | TT 最佳着命中率 2.1%
+  MCTS    平均 sims 1227 | 平均思考 5012ms
+```
+
+完整对照表(改动前 vs 改动后,5s/步):
+
+| 维度 | 改前 | 改后 | 变化 |
+|------|------|------|------|
+| 平均深度 | 3.6 | 3.7 | +0.1 |
+| 平均节点/步 | 20,712 | 20,165 | -2.6% |
+| TT 命中率 | 3.4% | 4.9% | +44% |
+| 节点/秒效率 | ~4.1k/s | ~4.0k/s | -2%(eval 变慢,但 cut-off 提前) |
+
+### 10.4 关键发现
+
+1. **TT 命中率从 3.4% → 5.9%**(20 局平均)— score 复用让命中能真正加速
+2. **8s 时间预算下深度达到 4.0**(跟改动后 5s 持平),节点数 +38% — 更多工作量花在更高质量的评估上
+3. **MCTS+NN 由于 val_acc 仅 5%,被横扫** — 这是 NN 模型本身的瓶颈,不是搜索的瓶颈
+
+### 10.5 已 push commits
+
+- `91082aa` feat(classic-ai): TT score+history, mobility/king-safety/pawn-structure eval
+- `b2bceb5` chore: AiMatchRunner per-step diagnostics + bench logs & reports
+
+### 10.6 后续规划
+
+| 步骤 | 内容 | 预计 Elo | 投入 |
+|------|------|----------|------|
+| 11. 重训 NN | 数据 74k→500k+,训练 50-100 epoch,目标 val_acc>25% | +700-900 | 2-3 天(GPU) |
+| 12. LMR / null-move | Late move reduction + null move pruning | +50-100 | 1-2 天 |
+| 13. TT 含 repetition key | 把杀禁着历史编入 hash,提升跨步复用率 | +30-60 | 0.5 天 |
