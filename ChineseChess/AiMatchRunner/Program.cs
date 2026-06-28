@@ -3,34 +3,33 @@ using ChineseChess.Encoding;
 using ChineseChess.Models;
 using ChineseChess.Services;
 
-// ─── Configuration ───────────────────────────────────────────────────────────
+// ─── Configuration (overridable via env vars or args) ────────────────────────
 
-var gamesToPlay = 20;        // Number of games (half as Red, half as Black)
-var onnxModelPath = "cnn_policy_value.onnx";
-var hardAiLevel = 4;         // Level 4 = 8-ply Alpha-Beta + QSearch
-var hardAiTimeMs = 5000;     // 5 seconds per move for classic AI
-var useMcts = true;          // true = MCTS+NN, false = pure NN policy
-var mctsSimulations = 3000;  // MCTS simulations per move (bumped from 600 for V8 test)
-var mctsTimeLimitMs = 5000;  // MCTS time limit per move
+int gamesToPlay = ParseInt("CHESS_GAMES", 10);
+string onnxModelPath = Environment.GetEnvironmentVariable("CHESS_MODEL") ?? "cnn_policy_value.onnx";
+int hardAiLevel = ParseInt("CHESS_LEVEL", 4);     // Level 4 = 8-ply Alpha-Beta + QSearch
+int hardAiTimeMs = ParseInt("CHESS_CLASSIC_MS", 5000);
+bool useMcts = ParseBool("CHESS_USE_MCTS", true);
+int mctsSimulations = ParseInt("CHESS_MCTS_SIMS", 3000);
+int mctsTimeLimitMs = ParseInt("CHESS_MCTS_MS", 5000);
+bool verbosePerMove = ParseBool("CHESS_VERBOSE", false);
+int maxMoves = ParseInt("CHESS_MAX_MOVES", 300);
 
 // ─── Results ─────────────────────────────────────────────────────────────────
 
-var onnxWins = 0;
-var classicWins = 0;
-var draws = 0;
-var totalGames = 0;
-
+int onnxWins = 0, classicWins = 0, draws = 0, totalGames = 0;
 var allResults = new List<(int Game, string OnnxSide, string Result, int Moves, string Reason)>();
+var diag = new List<DiagRow>();
 
-Console.WriteLine("═" .PadRight(70, '═'));
-Console.WriteLine("  中国象棋 AI 对弈测试 — ONNX 神经网络 vs 经典困难模式 (Level 4)");
-Console.WriteLine("═" .PadRight(70, '═'));
+Console.WriteLine("═".PadRight(72, '═'));
+Console.WriteLine("  中国象棋 AI 对弈测试 — qsearch+TT(经典) vs MCTS+NN");
+Console.WriteLine("═".PadRight(72, '═'));
 Console.WriteLine();
 Console.WriteLine($"  ONNX 模型: {onnxModelPath}");
-Console.WriteLine($"  经典 AI:   深度 {(hardAiLevel == 4 ? 8 : 4)} 层 Alpha-Beta + QSearch");
+Console.WriteLine($"  经典 AI:   Level {hardAiLevel} ({(hardAiLevel == 4 ? 8 : 4)}-ply Alpha-Beta + QSearch + TT)");
 Console.WriteLine($"  思考时间:   经典 AI 每步 {hardAiTimeMs}ms");
-Console.WriteLine($"  NN 模式:    {(useMcts ? $"MCTS + 神经网络 ({mctsSimulations} sims)" : "纯神经网络策略 (最高 Policy)")}");
-Console.WriteLine($"  总局数:     {gamesToPlay} 局（轮流执红/黑）");
+Console.WriteLine($"  NN 模式:    {(useMcts ? $"MCTS + 神经网络 ({mctsSimulations} sims, {mctsTimeLimitMs}ms)" : "纯神经网络策略")}");
+Console.WriteLine($"  总局数:     {gamesToPlay} 局(轮流执红/黑)");
 Console.WriteLine();
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
@@ -40,76 +39,82 @@ var classicAi = new XiangqiAiService(engine);
 
 if (!File.Exists(onnxModelPath))
 {
-    Console.WriteLine($"❌ 错误: ONNX 模型文件未找到: {onnxModelPath}");
+    Console.WriteLine($"❌ ONNX 模型文件未找到: {onnxModelPath}");
     Console.WriteLine($"   当前目录: {Environment.CurrentDirectory}");
     return;
 }
 
-Console.WriteLine("正在加载 ONNX 模型...");
+Console.Write("正在加载 ONNX 模型... ");
 var neuralAi = new XiangqiNeuralAiService(onnxModelPath, engine, isCnnModel: true);
 MctsAiService? mctsAi = useMcts ? new MctsAiService(neuralAi, engine) : null;
-Console.WriteLine($"  ✅ 模型加载成功 (架构: {(neuralAi.IsFactoredModel ? "Factored" : "Flat")}, {(neuralAi.IsV5Model ? "V5/16平面" : "Legacy/14平面")})");
+Console.WriteLine($"✅ ({(neuralAi.IsFactoredModel ? "Factored" : "Flat")}, {(neuralAi.IsV5Model ? "V5/16平面" : "Legacy/14平面")})");
 Console.WriteLine();
 
 // ─── Main game loop ──────────────────────────────────────────────────────────
 
-for (var gameIdx = 0; gameIdx < gamesToPlay; gameIdx++)
+for (int gameIdx = 0; gameIdx < gamesToPlay; gameIdx++)
 {
     var onnxSide = gameIdx % 2 == 0 ? Side.Red : Side.Black;
     var classicSide = engine.Opposite(onnxSide);
-    var onnxName = onnxSide == Side.Red ? "ONNX(红)" : "ONNX(黑)";
+    var onnxName = onnxSide == Side.Red ? "MCTS(红)" : "MCTS(黑)";
     var classicName = classicSide == Side.Red ? "Classic(红)" : "Classic(黑)";
 
-    Console.Write($"\n第 {gameIdx + 1,2} 局 — {onnxName} vs {classicName} ... ");
+    Console.Write($"第 {gameIdx + 1,2} 局 — {onnxName} vs {classicName} ... ");
 
     var state = engine.CreateInitialState();
-    var moveCount = 0;
-    var maxMoves = 300;        // Safety limit
-    var recentBoards = new HashSet<string>();
-    var repeatCount = 0;
+    int moveCount = 0;
     string? gameResult = null;
     string? endReason = null;
     var moveTimes = new List<(int MoveNum, string Player, double TimeMs)>();
+    var classicStats = new List<(int Depth, int Nodes, double TimeMs, int TtHits, int TtStores, int TtBestHits)>();
+    var mctsStats = new List<(int Sims, double TimeMs, float BestQ)>();
 
     var stopwatch = Stopwatch.StartNew();
+    var recentBoards = new HashSet<string>();
+    int repeatCount = 0;
 
     while (moveCount < maxMoves && gameResult is null)
     {
         Move? chosenMove;
+        var turnStart = Stopwatch.StartNew();
 
         if (state.Turn == onnxSide)
         {
-            // ── ONNX side ──
+            // ── MCTS+NN side ──
             if (mctsAi is not null)
             {
-                var sw = Stopwatch.StartNew();
                 var result = mctsAi.Search(state.Board, state.Turn, state.History,
-                    simulations: mctsSimulations, temperature: 0.1f, timeLimitMs: mctsTimeLimitMs);
-                sw.Stop();
+                    simulations: mctsSimulations, temperature: 0.05f, timeLimitMs: mctsTimeLimitMs);
                 chosenMove = result.BestMove;
-                moveTimes.Add((moveCount, "ONNX", sw.Elapsed.TotalMilliseconds));
+                mctsStats.Add((result.SimulationsRun, turnStart.Elapsed.TotalMilliseconds, result.BestQ));
+                if (verbosePerMove)
+                {
+                    Console.WriteLine($"    [MCTS 步 {moveCount}] sims={result.SimulationsRun} time={turnStart.Elapsed.TotalMilliseconds:F0}ms Q={result.BestQ:F3}");
+                    foreach (var s in result.MoveStats.OrderByDescending(s => s.Visits).Take(3))
+                        Console.WriteLine($"        → {s.Move.From.Row},{s.Move.From.Col}->{s.Move.To.Row},{s.Move.To.Col} visits={s.Visits} Q={s.Q:F3}");
+                }
             }
             else
             {
-                var sw = Stopwatch.StartNew();
                 chosenMove = neuralAi.ChooseMoveByPolicy(state.Board, state.Turn, state.History);
-                sw.Stop();
-                moveTimes.Add((moveCount, "ONNX", sw.Elapsed.TotalMilliseconds));
             }
         }
         else
         {
             // ── Classic AI side ──
-            var sw = Stopwatch.StartNew();
             var result = classicAi.ChooseMove(state.Board, state.Turn, hardAiLevel, state.History, hardAiTimeMs);
-            sw.Stop();
             chosenMove = result.Move;
-            moveTimes.Add((moveCount, "Classic", sw.Elapsed.TotalMilliseconds));
+            var s = result.Stats;
+            classicStats.Add((s.DepthReached, s.Nodes, turnStart.Elapsed.TotalMilliseconds, s.TtHits, s.TtStores, s.TtBestMoveHits));
+            if (verbosePerMove)
+            {
+                Console.WriteLine($"    [Cls 步 {moveCount}] depth={s.DepthReached} nodes={s.Nodes} time={turnStart.Elapsed.TotalMilliseconds:F0}ms ttHits={s.TtHits}");
+            }
         }
 
         if (chosenMove is null)
         {
-            gameResult = state.Turn == onnxSide ? "Classic" : "ONNX";
+            gameResult = state.Turn == onnxSide ? "Classic" : "MCTS";
             endReason = $"{state.Turn} 无合法着法";
             break;
         }
@@ -120,7 +125,7 @@ for (var gameIdx = 0; gameIdx < gamesToPlay; gameIdx++)
         if (state.Status is GameStatus.RedWins or GameStatus.BlackWins)
         {
             var winner = state.Status == GameStatus.RedWins ? Side.Red : Side.Black;
-            gameResult = winner == onnxSide ? "ONNX" : "Classic";
+            gameResult = winner == onnxSide ? "MCTS" : "Classic";
             endReason = winner == Side.Red ? "红方将杀" : "黑方将杀";
             break;
         }
@@ -132,7 +137,7 @@ for (var gameIdx = 0; gameIdx < gamesToPlay; gameIdx++)
             break;
         }
 
-        // Detect three-fold repetition
+        // 三次重复局面
         var boardKey = BoardFingerprint(state.Board, state.Turn);
         if (!recentBoards.Add(boardKey))
         {
@@ -144,10 +149,7 @@ for (var gameIdx = 0; gameIdx < gamesToPlay; gameIdx++)
                 break;
             }
         }
-        else
-        {
-            repeatCount = 0;
-        }
+        else repeatCount = 0;
     }
 
     if (gameResult is null)
@@ -158,77 +160,132 @@ for (var gameIdx = 0; gameIdx < gamesToPlay; gameIdx++)
 
     stopwatch.Stop();
 
-    // ── Tally ──
     totalGames++;
-    if (gameResult == "ONNX") onnxWins++;
+    if (gameResult == "MCTS") onnxWins++;
     else if (gameResult == "Classic") classicWins++;
     else draws++;
 
     allResults.Add((gameIdx + 1, onnxName, gameResult, moveCount, endReason!));
 
-    var avgOnnxMs = moveTimes.Where(m => m.Player == "ONNX").Select(m => m.TimeMs).DefaultIfEmpty().Average();
-    var avgClassicMs = moveTimes.Where(m => m.Player == "Classic").Select(m => m.TimeMs).DefaultIfEmpty().Average();
+    // 诊断汇总
+    double avgClsMs = classicStats.Count == 0 ? 0 : classicStats.Average(s => s.TimeMs);
+    double avgMctsMs = mctsStats.Count == 0 ? 0 : mctsStats.Average(s => s.TimeMs);
+    double avgDepth = classicStats.Count == 0 ? 0 : classicStats.Average(s => s.Depth);
+    double avgNodes = classicStats.Count == 0 ? 0 : classicStats.Average(s => s.Nodes);
+    int totalTtHits = classicStats.Sum(s => s.TtHits);
+    int totalTtStores = classicStats.Sum(s => s.TtStores);
+    int totalTtBestHits = classicStats.Sum(s => s.TtBestHits);
+    int totalNodes = classicStats.Sum(s => s.Nodes);
+    double ttHitRate = totalNodes == 0 ? 0 : 100.0 * totalTtHits / totalNodes;
+    double ttBestRate = totalNodes == 0 ? 0 : 100.0 * totalTtBestHits / totalNodes;
+    double avgMctsSims = mctsStats.Count == 0 ? 0 : mctsStats.Average(s => s.Sims);
 
-    Console.WriteLine($"{endReason} | {moveCount}步 | {stopwatch.Elapsed.TotalSeconds:F0}s");
-    Console.WriteLine($"          ONNX avg: {avgOnnxMs:F1}ms, Classic avg: {avgClassicMs:F1}ms");
+    diag.Add(new DiagRow(
+        gameIdx + 1, onnxSide == Side.Red, gameResult, moveCount, endReason!,
+        classicStats.Count, avgDepth, avgNodes, avgClsMs,
+        totalTtHits, totalTtStores, ttHitRate, ttBestRate,
+        mctsStats.Count, avgMctsSims, avgMctsMs));
+
+    var sym = gameResult switch { "MCTS" => "✅M", "Classic" => "✅C", _ => "🔷D" };
+    Console.WriteLine($"{sym}  {endReason,-14} | {moveCount,3}步 | {stopwatch.Elapsed.TotalSeconds:F0}s");
+    Console.WriteLine($"      Classic: 平均深度 {avgDepth:F1} | 平均节点 {avgNodes:F0} | {avgClsMs:F0}ms/步 | TT命中率 {ttHitRate:F1}% | TT最佳着命中率 {ttBestRate:F1}%");
+    Console.WriteLine($"      MCTS:    平均 sims {avgMctsSims:F0} | {avgMctsMs:F0}ms/步");
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
 Console.WriteLine();
-Console.WriteLine("═" .PadRight(70, '═'));
+Console.WriteLine("═".PadRight(72, '═'));
 Console.WriteLine("  对局结果汇总");
-Console.WriteLine("═" .PadRight(70, '═'));
+Console.WriteLine("═".PadRight(72, '═'));
 Console.WriteLine();
-Console.WriteLine($"  总局数:     {totalGames}");
-Console.WriteLine($"  ONNX 胜:    {onnxWins,2}  ({onnxWins * 100.0 / totalGames,5:F1}%)");
-Console.WriteLine($"  Classic 胜: {classicWins,2}  ({classicWins * 100.0 / totalGames,5:F1}%)");
-Console.WriteLine($"  和棋:       {draws,2}  ({draws * 100.0 / totalGames,5:F1}%)");
-Console.WriteLine();
-
-Console.WriteLine($"  ONNX 执红: {allResults.Count(r => r.OnnxSide == "ONNX(红)" && r.Result == "ONNX")}胜 / " +
-                  $"{allResults.Count(r => r.OnnxSide == "ONNX(红)" && r.Result == "Classic")}负 / " +
-                  $"{allResults.Count(r => r.OnnxSide == "ONNX(红)" && r.Result == "Draw")}和");
-Console.WriteLine($"  ONNX 执黑: {allResults.Count(r => r.OnnxSide == "ONNX(黑)" && r.Result == "ONNX")}胜 / " +
-                  $"{allResults.Count(r => r.OnnxSide == "ONNX(黑)" && r.Result == "Classic")}负 / " +
-                  $"{allResults.Count(r => r.OnnxSide == "ONNX(黑)" && r.Result == "Draw")}和");
+Console.WriteLine($"  总局数:      {totalGames}");
+Console.WriteLine($"  MCTS 胜:     {onnxWins,2}  ({onnxWins * 100.0 / totalGames,5:F1}%)");
+Console.WriteLine($"  Classic 胜:  {classicWins,2}  ({classicWins * 100.0 / totalGames,5:F1}%)");
+Console.WriteLine($"  和棋:        {draws,2}  ({draws * 100.0 / totalGames,5:F1}%)");
 Console.WriteLine();
 
-// Detailed game log
-Console.WriteLine("  详细对局日志:");
-Console.WriteLine($"  {"局号",4} {"ONNX方",12} {"结果",10} {"步数",5} {"原因",-20}");
-Console.WriteLine($"  {"".PadRight(55, '─')}");
-foreach (var r in allResults)
+Console.WriteLine($"  MCTS 执红:   {allResults.Count(r => r.OnnxSide == "MCTS(红)" && r.Result == "MCTS")}胜 / " +
+                  $"{allResults.Count(r => r.OnnxSide == "MCTS(红)" && r.Result == "Classic")}负 / " +
+                  $"{allResults.Count(r => r.OnnxSide == "MCTS(红)" && r.Result == "Draw")}和");
+Console.WriteLine($"  MCTS 执黑:   {allResults.Count(r => r.OnnxSide == "MCTS(黑)" && r.Result == "MCTS")}胜 / " +
+                  $"{allResults.Count(r => r.OnnxSide == "MCTS(黑)" && r.Result == "Classic")}负 / " +
+                  $"{allResults.Count(r => r.OnnxSide == "MCTS(黑)" && r.Result == "Draw")}和");
+Console.WriteLine();
+
+// 详细诊断
+Console.WriteLine("  每局详细诊断:");
+Console.WriteLine($"  {"局",-3} {"MCTS方",-10} {"结果",-8} {"步数",-4} {"Cls深度",-7} {"Cls节点",-9} {"Cls时间ms",-10} {"TT命中率",-9} {"TT最佳",-8} {"MCTS sims",-10} {"MCTS ms",-8}");
+Console.WriteLine($"  {new string('─', 95)}");
+foreach (var d in diag)
 {
-    var resultSymbol = r.Result switch
-    {
-        "ONNX" => "✅",
-        "Classic" => "❌",
-        _ => "🔷"
-    };
-    Console.WriteLine($"  {r.Game,4} {r.OnnxSide,12} {resultSymbol + " " + r.Result,-10} {r.Moves,5} {r.Reason,-20}");
+    var sym = d.Result switch { "MCTS" => "✅M", "Classic" => "✅C", _ => "🔷D" };
+    Console.WriteLine($"  {d.Game,-3} {(d.MctsIsRed ? "红" : "黑"),-10} {sym,-8} {d.Moves,-4} {d.AvgDepth,-7:F1} {d.AvgNodes,-9:F0} {d.AvgClsMs,-10:F0} {d.TtHitRate,-9:F1}% {d.TtBestRate,-8:F1}% {d.AvgMctsSims,-10:F0} {d.AvgMctsMs,-8:F0}");
 }
 
+// 总体诊断
+double oDepth = diag.Where(d => d.ClsMoves > 0).Select(d => d.AvgDepth).DefaultIfEmpty(0).Average();
+double oNodes = diag.Where(d => d.ClsMoves > 0).Select(d => d.AvgNodes).DefaultIfEmpty(0).Average();
+double oTtHit = diag.Where(d => d.ClsMoves > 0).Select(d => d.TtHitRate).DefaultIfEmpty(0).Average();
+double oTtBest = diag.Where(d => d.ClsMoves > 0).Select(d => d.TtBestRate).DefaultIfEmpty(0).Average();
+double oMctsSims = diag.Where(d => d.MctsMoves > 0).Select(d => d.AvgMctsSims).DefaultIfEmpty(0).Average();
+double oClsMs = diag.Where(d => d.ClsMoves > 0).Select(d => d.AvgClsMs).DefaultIfEmpty(0).Average();
+double oMctsMs = diag.Where(d => d.MctsMoves > 0).Select(d => d.AvgMctsMs).DefaultIfEmpty(0).Average();
+
 Console.WriteLine();
-Console.WriteLine("═" .PadRight(70, '═'));
+Console.WriteLine("  总体诊断:");
+Console.WriteLine($"    Classic 平均深度 {oDepth:F1} | 平均节点/步 {oNodes:F0} | 平均思考 {oClsMs:F0}ms");
+Console.WriteLine($"    Classic TT 命中率 {oTtHit:F1}% | TT 最佳着命中率 {oTtBest:F1}%");
+Console.WriteLine($"    MCTS    平均 sims {oMctsSims:F0} | 平均思考 {oMctsMs:F0}ms");
+
+Console.WriteLine();
+Console.WriteLine("═".PadRight(72, '═'));
 Console.WriteLine("  对局完成!");
-Console.WriteLine("═" .PadRight(70, '═'));
+Console.WriteLine("═".PadRight(72, '═'));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 static string BoardFingerprint(Piece?[,] board, Side turn)
 {
-    // Simple fingerprint: piece layout + turn
     var sb = new System.Text.StringBuilder();
     sb.Append((int)turn);
-    for (var r = 0; r < XiangqiEngine.BoardRows; r++)
-    {
-        for (var c = 0; c < XiangqiEngine.BoardCols; c++)
+    for (int r = 0; r < XiangqiEngine.BoardRows; r++)
+        for (int c = 0; c < XiangqiEngine.BoardCols; c++)
         {
             var p = board[r, c];
             if (p is null) sb.Append('.');
             else sb.Append($"{(int)p.Side}{(int)p.Type}");
         }
-    }
     return sb.ToString();
 }
+
+static int ParseInt(string envName, int fallback)
+{
+    var v = Environment.GetEnvironmentVariable(envName);
+    return int.TryParse(v, out var i) ? i : fallback;
+}
+
+static bool ParseBool(string envName, bool fallback)
+{
+    var v = Environment.GetEnvironmentVariable(envName);
+    if (string.IsNullOrEmpty(v)) return fallback;
+    return v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase);
+}
+
+record DiagRow(
+    int Game,
+    bool MctsIsRed,
+    string Result,
+    int Moves,
+    string Reason,
+    int ClsMoves,
+    double AvgDepth,
+    double AvgNodes,
+    double AvgClsMs,
+    int TtHits,
+    int TtStores,
+    double TtHitRate,
+    double TtBestRate,
+    int MctsMoves,
+    double AvgMctsSims,
+    double AvgMctsMs);
