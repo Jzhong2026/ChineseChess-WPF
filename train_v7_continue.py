@@ -358,6 +358,10 @@ def train():
             torch.save({
                 "model_state_dict": model.state_dict(),
                 "architecture": "cnn_full_v7",
+                "channels": ckpt.get("channels", 64),
+                "res_blocks": ckpt.get("res_blocks", 6),
+                "policy_channels": ckpt.get("policy_channels", 8),
+                "planes": INPUT_PLANES,
                 "epoch": epoch,
             }, periodic_path)
             print(f"  💾 Periodic checkpoint: {periodic_path.name}", flush=True)

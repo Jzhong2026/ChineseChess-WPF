@@ -4,9 +4,11 @@
 
 set -e
 
-SELFPLAY_DIR="/e/Projects/WorkBuddy/Chess/ChineseChess-WPF/ChineseChess/ChineseChess.SelfPlay/bin/Release/net8.0"
-DATA_DIR="/e/Projects/WorkBuddy/Chess/ChineseChess-WPF/data/selfplay"
-MERGE_DIR="/e/Projects/WorkBuddy/Chess/ChineseChess-WPF/data/selfplay_parallel"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$SCRIPT_DIR"
+SELFPLAY_DIR="$REPO_ROOT/ChineseChess/ChineseChess.SelfPlay/bin/Release/net8.0"
+DATA_DIR="$REPO_ROOT/data/selfplay"
+MERGE_DIR="$REPO_ROOT/data/selfplay_parallel"
 
 echo "========================================"
 echo "  并行自对弈启动 — 5 进程 × 400 局"
@@ -17,6 +19,7 @@ echo "内存: $(free -h 2>/dev/null | grep Mem | awk '{print $7}' || echo unknow
 echo ""
 
 # Clean old data
+mkdir -p "$DATA_DIR"
 rm -f "$DATA_DIR"/parallel_*.jsonl "$DATA_DIR"/parallel_*.tmp 2>/dev/null
 mkdir -p "$MERGE_DIR"
 
@@ -59,8 +62,12 @@ echo "所有进程已启动，等待完成..."
 FAILED=0
 for i in 0 1 2 3 4; do
     PID=${PIDS[$i]}
-    wait $PID
-    EXIT_CODE=$?
+    # `if` keeps set -e from aborting on a non-zero worker, so failures stay countable
+    if wait "$PID"; then
+        EXIT_CODE=0
+    else
+        EXIT_CODE=$?
+    fi
     if [ $EXIT_CODE -ne 0 ]; then
         echo "[进程 $i] PID=$PID 失败 (exit=$EXIT_CODE)"
         FAILED=$((FAILED + 1))

@@ -100,16 +100,20 @@ public sealed class XiangqiEngine
     public IReadOnlyList<Move> GetLegalMoves(Piece?[,] board, Side side, IReadOnlyList<Move>? history = null)
     {
         var moves = new List<Move>();
-        var seenPositions = history is { Count: > 0 } ? GetPositionHistory(history, board) : null;
+        ulong hash = 0;
+        HashSet<ulong>? seenPositions = null;
+        if (history is { Count: > 0 })
+        {
+            hash = ZobristHash.Compute(board, side);
+            seenPositions = BuildPositionHistory(history, board, side);
+        }
+
         ForEachPiece(board, (piece, from) =>
         {
             if (piece.Side != side) return;
             foreach (var move in GetPseudoMoves(board, from, piece))
             {
-                if (!WouldLeaveGeneralInCheck(board, move, side) && !WouldRepeatCheck(board, move, side, seenPositions))
-                {
-                    moves.Add(move);
-                }
+                if (IsLegalAfterMove(board, move, side, seenPositions, hash)) moves.Add(move);
             }
         });
         return moves;
@@ -119,9 +123,17 @@ public sealed class XiangqiEngine
     {
         var piece = GetPiece(board, from);
         if (piece is null) return Array.Empty<Move>();
-        var seenPositions = history is { Count: > 0 } ? GetPositionHistory(history, board) : null;
+
+        ulong hash = 0;
+        HashSet<ulong>? seenPositions = null;
+        if (history is { Count: > 0 })
+        {
+            hash = ZobristHash.Compute(board, piece.Side);
+            seenPositions = BuildPositionHistory(history, board, piece.Side);
+        }
+
         return GetPseudoMoves(board, from, piece)
-            .Where(move => !WouldLeaveGeneralInCheck(board, move, piece.Side) && !WouldRepeatCheck(board, move, piece.Side, seenPositions))
+            .Where(move => IsLegalAfterMove(board, move, piece.Side, seenPositions, hash))
             .ToList();
     }
 
@@ -136,8 +148,11 @@ public sealed class XiangqiEngine
 
     public bool IsRepeatCheckMove(Piece?[,] board, Move move, Side side, IReadOnlyList<Move>? history = null)
     {
-        var seenPositions = history is { Count: > 0 } ? GetPositionHistory(history, board) : null;
-        return WouldRepeatCheck(board, move, side, seenPositions);
+        if (history is not { Count: > 0 }) return false;
+        var hash = ZobristHash.Compute(board, side);
+        var seenPositions = BuildPositionHistory(history, board, side);
+        var enemy = Opposite(side);
+        return IsInCheck(ApplyMove(board, move), enemy) && seenPositions.Contains(HashAfterMove(board, hash, move, side));
     }
 
     public GameStatus GetGameStatus(Piece?[,] board, Side turn, IReadOnlyList<Move>? history = null)
@@ -157,8 +172,98 @@ public sealed class XiangqiEngine
     {
         var general = FindGeneral(board, side);
         if (general is null) return true;
-        var enemy = Opposite(side);
-        return GetAllPseudoMovesWithoutCheckFilter(board, enemy).Any(move => move.To == general.Value);
+        return IsSquareAttacked(board, general.Value, Opposite(side));
+    }
+
+    private static readonly (int dr, int dc)[] OrthogonalDirections = { (-1, 0), (1, 0), (0, -1), (0, 1) };
+
+    // Offsets from the TARGET square to an attacking horse, and to that horse's leg.
+    private static readonly (int dr, int dc, int lr, int lc)[] HorseAttackOffsets =
+    {
+        (-2, -1, -1, -1), (-2, 1, -1, 1),
+        (2, -1, 1, -1), (2, 1, 1, 1),
+        (-1, -2, -1, -1), (1, -2, 1, -1),
+        (-1, 2, -1, 1), (1, 2, 1, 1),
+    };
+
+    /// <summary>
+    /// Allocation-free attack scan on a general's square. Advisors and elephants
+    /// are skipped: neither can leave its own palace/half, so neither can ever
+    /// attack the enemy general.
+    /// </summary>
+    private bool IsSquareAttacked(Piece?[,] board, Position target, Side attacker)
+    {
+        var tr = target.Row;
+        var tc = target.Col;
+
+        foreach (var (dr, dc) in OrthogonalDirections)
+        {
+            var r = tr + dr;
+            var c = tc + dc;
+            var distance = 1;
+            var screens = 0;
+            while (r >= 0 && r < BoardRows && c >= 0 && c < BoardCols)
+            {
+                var piece = board[r, c];
+                if (piece is not null)
+                {
+                    if (piece.Side == attacker)
+                    {
+                        if (screens == 0)
+                        {
+                            if (piece.Type == PieceType.Rook) return true;
+                            // Generals attack along an open file at any distance (flying
+                            // general) and orthogonally at distance 1.
+                            if (piece.Type == PieceType.General && (dc == 0 || distance == 1)) return true;
+                        }
+                        else if (piece.Type == PieceType.Cannon)
+                        {
+                            return true;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                    screens++;
+                    if (screens >= 2) break;
+                }
+                r += dr;
+                c += dc;
+                distance++;
+            }
+        }
+
+        foreach (var (dr, dc, lr, lc) in HorseAttackOffsets)
+        {
+            var hr = tr + dr;
+            var hc = tc + dc;
+            if (hr < 0 || hr >= BoardRows || hc < 0 || hc >= BoardCols) continue;
+            var piece = board[hr, hc];
+            if (piece is null || piece.Side != attacker || piece.Type != PieceType.Horse) continue;
+            var legR = tr + lr;
+            var legC = tc + lc;
+            if (board[legR, legC] is null) return true;
+        }
+
+        var forward = attacker == Side.Red ? -1 : 1;
+        var soldierRow = tr - forward;
+        if (soldierRow >= 0 && soldierRow < BoardRows)
+        {
+            var piece = board[soldierRow, tc];
+            if (piece is not null && piece.Side == attacker && piece.Type == PieceType.Soldier) return true;
+        }
+        for (var dc = -1; dc <= 1; dc += 2)
+        {
+            var c = tc + dc;
+            if (c < 0 || c >= BoardCols) continue;
+            var piece = board[tr, c];
+            if (piece is null || piece.Side != attacker || piece.Type != PieceType.Soldier) continue;
+            var crossed = attacker == Side.Red ? tr <= 4 : tr >= 5;
+            if (crossed) return true;
+        }
+
+        return false;
     }
 
     public Position? FindGeneral(Piece?[,] board, Side side)
@@ -183,58 +288,67 @@ public sealed class XiangqiEngine
         return $"{PieceLabel(move.Piece)} {from}-{to}{capture}";
     }
 
-    private bool WouldLeaveGeneralInCheck(Piece?[,] board, Move move, Side side) => IsInCheck(ApplyMove(board, move), side);
-
-    private bool WouldRepeatCheck(Piece?[,] board, Move move, Side side, HashSet<string>? seenPositions)
+    /// <summary>
+    /// Applies the move once and runs both legality tests on the same resulting
+    /// board: self-check, then (only when a history is supplied) perpetual check.
+    /// </summary>
+    private bool IsLegalAfterMove(Piece?[,] board, Move move, Side side, HashSet<ulong>? seenPositions, ulong hash)
     {
-        if (seenPositions is null) return false;
-        var nextBoard = ApplyMove(board, move);
+        var next = ApplyMove(board, move);
+        if (IsInCheck(next, side)) return false;
+        if (seenPositions is null) return true;
         var enemy = Opposite(side);
-        return IsInCheck(nextBoard, enemy) && seenPositions.Contains(GetPositionKey(nextBoard, enemy));
+        if (!IsInCheck(next, enemy)) return true;
+        return !seenPositions.Contains(HashAfterMove(board, hash, move, side));
     }
 
-    private Piece?[,] UndoMove(Piece?[,] board, Move move)
+    /// <summary>Incremental Zobrist update for a move, so no position key is ever built as a string.</summary>
+    private ulong HashAfterMove(Piece?[,] board, ulong hash, Move move, Side side)
     {
-        var next = CloneBoard(board);
-        next[move.From.Row, move.From.Col] = move.Piece;
-        next[move.To.Row, move.To.Col] = move.Captured;
+        var moved = move.Piece;
+        var captured = board[move.To.Row, move.To.Col];
+        var next = hash
+            ^ ZobristHash.PieceKey(move.From.Row, move.From.Col, moved.Side, moved.Type)
+            ^ ZobristHash.PieceKey(move.To.Row, move.To.Col, moved.Side, moved.Type)
+            ^ ZobristHash.TurnKey(side)
+            ^ ZobristHash.TurnKey(Opposite(side));
+        if (captured is not null)
+            next ^= ZobristHash.PieceKey(move.To.Row, move.To.Col, captured.Side, captured.Type);
         return next;
     }
 
-    private HashSet<string> GetPositionHistory(IReadOnlyList<Move> history, Piece?[,] currentBoard)
+    /// <summary>
+    /// Walks the history backwards once on a single scratch board, updating the
+    /// hash incrementally. Turns are derived from the current side to move, so a
+    /// partial history is handled correctly too.
+    /// </summary>
+    private HashSet<ulong> BuildPositionHistory(IReadOnlyList<Move> history, Piece?[,] currentBoard, Side currentTurn)
     {
-        var board = currentBoard;
-        var boards = new List<Piece?[,]> { board };
+        var scratch = CloneBoard(currentBoard);
+        var hash = ZobristHash.Compute(scratch, currentTurn);
+        var seen = new HashSet<ulong> { hash };
+        var turn = currentTurn;
+
         for (var i = history.Count - 1; i >= 0; i--)
         {
-            board = UndoMove(board, history[i]);
-            boards.Add(board);
-        }
+            var move = history[i];
+            var moved = move.Piece;
+            var captured = move.Captured;
 
-        boards.Reverse();
-        var seen = new HashSet<string>();
-        var turn = Side.Red;
-        foreach (var item in boards)
-        {
-            seen.Add(GetPositionKey(item, turn));
+            hash ^= ZobristHash.PieceKey(move.To.Row, move.To.Col, moved.Side, moved.Type);
+            scratch[move.To.Row, move.To.Col] = captured;
+            if (captured is not null)
+                hash ^= ZobristHash.PieceKey(move.To.Row, move.To.Col, captured.Side, captured.Type);
+            scratch[move.From.Row, move.From.Col] = moved;
+            hash ^= ZobristHash.PieceKey(move.From.Row, move.From.Col, moved.Side, moved.Type);
+
+            hash ^= ZobristHash.TurnKey(turn);
             turn = Opposite(turn);
+            hash ^= ZobristHash.TurnKey(turn);
+            seen.Add(hash);
         }
 
         return seen;
-    }
-
-    private string GetPositionKey(Piece?[,] board, Side turn)
-    {
-        var parts = new List<string> { turn.ToString() };
-        for (var row = 0; row < BoardRows; row++)
-        {
-            for (var col = 0; col < BoardCols; col++)
-            {
-                parts.Add(board[row, col]?.Id ?? ".");
-            }
-        }
-
-        return string.Join("|", parts);
     }
 
     private void ForEachPiece(Piece?[,] board, Action<Piece, Position> callback)
@@ -247,16 +361,6 @@ public sealed class XiangqiEngine
                 if (piece is not null) callback(piece, new Position(row, col));
             }
         }
-    }
-
-    private IReadOnlyList<Move> GetAllPseudoMovesWithoutCheckFilter(Piece?[,] board, Side side)
-    {
-        var moves = new List<Move>();
-        ForEachPiece(board, (piece, from) =>
-        {
-            if (piece.Side == side) moves.AddRange(GetPseudoMoves(board, from, piece));
-        });
-        return moves;
     }
 
     private IReadOnlyList<Move> GetPseudoMoves(Piece?[,] board, Position from, Piece piece) => piece.Type switch

@@ -10,4 +10,8 @@
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.19.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ChineseChess.Core.Tests" />
+  </ItemGroup>
+
 </Project>

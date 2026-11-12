@@ -1,0 +1,1 @@
+"""Regression tests for the Python/Shell defects B2-B8 (docs/devlog/2026-11-11.md)."""

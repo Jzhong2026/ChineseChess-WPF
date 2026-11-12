@@ -114,9 +114,11 @@ try
             endReason = state.Status.ToString();
         }
 
+        // Unfinished games also carry finalResult == 0; counting them as draws
+        // would inflate the draw rate that README tells users to inspect.
         if (finalResult == 1) redWins++;
         else if (finalResult == -1) blackWins++;
-        else draws++;
+        else if (!unfinished) draws++;
 
         if (options.SkipUnfinished && unfinished)
         {

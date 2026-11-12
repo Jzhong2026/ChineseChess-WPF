@@ -408,6 +408,8 @@ def train():
                 "architecture": "cnn_full_v7",
                 "channels": args.channels,
                 "res_blocks": args.res_blocks,
+                "policy_channels": args.policy_channels,
+                "planes": INPUT_PLANES,
                 "epoch": epoch,
             }, periodic_path)
             print(f"  💾 Periodic checkpoint saved: {periodic_path.name}")

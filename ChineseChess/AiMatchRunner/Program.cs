@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using ChineseChess.AiMatchRunner;
 using ChineseChess.Encoding;
 using ChineseChess.Models;
 using ChineseChess.Services;
@@ -70,8 +71,7 @@ for (int gameIdx = 0; gameIdx < gamesToPlay; gameIdx++)
     var mctsStats = new List<(int Sims, double TimeMs, float BestQ)>();
 
     var stopwatch = Stopwatch.StartNew();
-    var recentBoards = new HashSet<string>();
-    int repeatCount = 0;
+    var repetitions = new RepetitionCounter();
 
     while (moveCount < maxMoves && gameResult is null)
     {
@@ -138,18 +138,12 @@ for (int gameIdx = 0; gameIdx < gamesToPlay; gameIdx++)
         }
 
         // 三次重复局面
-        var boardKey = BoardFingerprint(state.Board, state.Turn);
-        if (!recentBoards.Add(boardKey))
+        if (repetitions.Add(BoardFingerprint(state.Board, state.Turn)))
         {
-            repeatCount++;
-            if (repeatCount >= 3)
-            {
-                gameResult = "Draw";
-                endReason = "三次重复局面";
-                break;
-            }
+            gameResult = "Draw";
+            endReason = "三次重复局面";
+            break;
         }
-        else repeatCount = 0;
     }
 
     if (gameResult is null)

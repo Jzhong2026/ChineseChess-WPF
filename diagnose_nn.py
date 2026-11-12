@@ -3,21 +3,31 @@
 Comprehensive diagnostic: Check every layer of the NN pipeline to find why the AI is weak.
 
 Checks:
-1. ONNX model outputs vs PyTorch model outputs (numerical consistency)
-2. Current-player perspective encoding (is the model confused about sides?)
-3. Policy quality: top-K accuracy, calibration
-4. Value head quality: calibration, correlation with game results
-5. Side-to-move blindness: does the model know whose turn it is?
+1. Side-to-move blindness (is the model confused about sides?)
+2. Policy quality: top-K accuracy
+3. Value head quality: calibration, correlation with game results
+4. Red vs Black policy quality
+5. Policy entropy
+
+Usage:
+    python diagnose_nn.py --model artifacts/cnn_policy_value.onnx \
+        --data data/selfplay/train_500.jsonl
 """
+import argparse
 import json
+import os
 import numpy as np
 import sys
 
-PLANES = 14
 BOARD_ROWS = 10
 BOARD_COLS = 9
 BOARD_SIZE = BOARD_ROWS * BOARD_COLS  # 90
 ACTION_DIM = BOARD_SIZE * BOARD_SIZE  # 8100
+SIDE_PLANES = 2
+
+DEFAULT_MODEL = "artifacts/cnn_policy_value.onnx"
+DEFAULT_DATA = "data/selfplay/train_500.jsonl"
+
 
 def load_samples(path, max_samples=500):
     samples = []
@@ -31,41 +41,106 @@ def load_samples(path, max_samples=500):
                 break
     return samples
 
-def encode_cnn(board_encoding):
-    """Convert square-major flat[1260] to plane-major [1, 14, 10, 9]"""
+
+def resolve_input_spec(session):
+    """Read the real input shape from the model instead of hardcoding 14 planes."""
+    meta = session.get_inputs()[0]
+    shape = list(meta.shape)
+    if len(shape) != 4 or not all(isinstance(d, int) for d in shape[1:]):
+        raise ValueError(f"board input needs static [batch, planes, rows, cols] dims, got {shape}")
+    return meta.name, int(shape[1]), int(shape[2]), int(shape[3])
+
+
+def encode_cnn(board_encoding, planes, side_to_move=1, rows=BOARD_ROWS, cols=BOARD_COLS):
+    """Convert square-major flat[90*board_planes] to plane-major [1, planes, rows, cols]."""
+    board_planes = planes - SIDE_PLANES if planes >= 16 else planes
     flat = np.array(board_encoding, dtype=np.float32)
-    tensor = np.zeros((1, PLANES, BOARD_ROWS, BOARD_COLS), dtype=np.float32)
-    for row in range(BOARD_ROWS):
-        for col in range(BOARD_COLS):
-            for plane in range(PLANES):
-                flat_idx = (row * BOARD_COLS + col) * PLANES + plane
-                tensor[0, plane, row, col] = flat[flat_idx]
+    expected = rows * cols * board_planes
+    if flat.size != expected:
+        raise ValueError(f"BoardEncoding length {flat.size} != {expected} for {planes} input planes")
+    tensor = np.zeros((1, planes, rows, cols), dtype=np.float32)
+    tensor[0, :board_planes] = flat.reshape(rows * cols, board_planes).T.reshape(board_planes, rows, cols)
+    if planes >= 16:
+        tensor[0, board_planes + (0 if side_to_move == 1 else 1)] = 1.0
     return tensor
+
+
+def value_to_player_perspective(value, side_to_move, planes):
+    # 16-plane models already emit current-player value (C# XiangqiNeuralAiService does not flip)
+    return value if planes >= 16 else value * side_to_move
+
+
+def value_perspective_label(planes):
+    return "current player perspective" if planes >= 16 else "Red's perspective"
+
 
 def softmax(x):
     x = x - x.max()
     e = np.exp(x)
     return e / e.sum()
 
-def main():
+
+def build_parser():
+    p = argparse.ArgumentParser(description="Diagnose the deployed Chinese Chess NN")
+    p.add_argument("--model", default=DEFAULT_MODEL)
+    p.add_argument("--data", default=DEFAULT_DATA, help="Self-play JSONL providing board/legal-move samples")
+    p.add_argument("--max-samples", type=int, default=500)
+    return p
+
+
+def main(argv=None):
     import onnxruntime as ort
+
+    args = build_parser().parse_args(argv)
+    onnx_path = args.model
+    if not os.path.isfile(onnx_path):
+        print(f"ERROR: ONNX model not found: {onnx_path}")
+        return 2
+    if not os.path.isfile(args.data):
+        print(f"ERROR: sample data not found: {args.data} (pass --data PATH to an existing self-play JSONL)")
+        return 2
 
     print("=" * 70)
     print("CHINESE CHESS NN AI DIAGNOSTIC REPORT")
     print("=" * 70)
 
     # Load ONNX model
-    onnx_path = "artifacts/cnn_policy_value.onnx"
-    session = ort.InferenceSession(onnx_path)
+    session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+    input_name, planes, rows, cols = resolve_input_spec(session)
     output_names = [o.name for o in session.get_outputs()]
     is_factored = "from_logits" in output_names
     print(f"\nONNX model: {onnx_path}")
     print(f"Model type: {'Factored (from/to heads)' if is_factored else 'Flat (8100 policy)'}")
+    print(f"Input: {input_name} [batch, {planes}, {rows}, {cols}]")
     print(f"Output names: {output_names}")
 
     # Load samples
-    samples = load_samples("data/selfplay/train_500.jsonl", max_samples=500)
+    samples = load_samples(args.data, max_samples=args.max_samples)
+    if not samples:
+        print(f"ERROR: no samples in {args.data}")
+        return 2
     print(f"Loaded {len(samples)} samples for analysis")
+
+    def predict(sample):
+        tensor = encode_cnn(sample["BoardEncoding"], planes, sample["SideToMove"], rows, cols)
+        return session.run(None, {input_name: tensor})
+
+    def value_of(outputs):
+        return outputs[2][0] if is_factored else outputs[1][0]
+
+    def combined_of(outputs):
+        if is_factored:
+            from_logits = outputs[0][0]
+            to_logits = outputs[1][0]
+            return (from_logits.reshape(BOARD_SIZE, 1) + to_logits.reshape(1, BOARD_SIZE)).reshape(ACTION_DIM)
+        return outputs[0][0]
+
+    def masked_of(outputs, legal):
+        masked = np.array(combined_of(outputs), dtype=np.float64, copy=True)
+        illegal_mask = np.ones(ACTION_DIM, dtype=bool)
+        illegal_mask[legal] = False
+        masked[illegal_mask] = -1e9
+        return masked
 
     # ─── Check 1: Side-to-move analysis ──────────────────────────────
     print("\n" + "=" * 70)
@@ -80,27 +155,10 @@ def main():
     # Check if the model can distinguish Red vs Black to-move positions
     # Run inference on a Red and Black sample and compare value predictions
     if red_samples and black_samples:
-        red_val_preds = []
-        black_val_preds = []
-        for s in red_samples[:50]:
-            tensor = encode_cnn(s["BoardEncoding"])
-            outputs = session.run(None, {session.get_inputs()[0].name: tensor})
-            if is_factored:
-                val = outputs[2][0]
-            else:
-                val = outputs[1][0]
-            red_val_preds.append(val)
+        red_val_preds = [value_of(predict(s)) for s in red_samples[:50]]
+        black_val_preds = [value_of(predict(s)) for s in black_samples[:50]]
 
-        for s in black_samples[:50]:
-            tensor = encode_cnn(s["BoardEncoding"])
-            outputs = session.run(None, {session.get_inputs()[0].name: tensor})
-            if is_factored:
-                val = outputs[2][0]
-            else:
-                val = outputs[1][0]
-            black_val_preds.append(val)
-
-        print(f"\nValue predictions (Red's perspective):")
+        print(f"\nValue predictions ({value_perspective_label(planes)}):")
         print(f"  Red-to-move:   mean={np.mean(red_val_preds):.4f}, std={np.std(red_val_preds):.4f}")
         print(f"  Black-to-move: mean={np.mean(black_val_preds):.4f}, std={np.std(black_val_preds):.4f}")
 
@@ -111,31 +169,19 @@ def main():
         print(f"  Red-to-move:   mean={np.mean(red_val_targets):.4f}")
         print(f"  Black-to-move: mean={np.mean(black_val_targets):.4f}")
 
-        # Check: when it's Black's turn and Black wins (result=-1),
-        # the value should be negative (from Red's perspective)
+        # For 16-plane models the value is the mover's own score, so a Black win is +1.
+        black_wins_positive = planes >= 16
         black_wins = [s for s in black_samples[:50] if s["Result"] == -1]
         red_wins = [s for s in black_samples[:50] if s["Result"] == 1]
         if black_wins:
-            bw_vals = []
-            for s in black_wins[:20]:
-                tensor = encode_cnn(s["BoardEncoding"])
-                outputs = session.run(None, {session.get_inputs()[0].name: tensor})
-                if is_factored:
-                    bw_vals.append(outputs[2][0])
-                else:
-                    bw_vals.append(outputs[1][0])
-            print(f"\n  Black-to-move, Black won: val_pred mean={np.mean(bw_vals):.4f} (should be < 0)")
+            bw_vals = [value_of(predict(s)) for s in black_wins[:20]]
+            expect = "> 0" if black_wins_positive else "< 0"
+            print(f"\n  Black-to-move, Black won: val_pred mean={np.mean(bw_vals):.4f} (should be {expect})")
 
         if red_wins:
-            rw_vals = []
-            for s in red_wins[:20]:
-                tensor = encode_cnn(s["BoardEncoding"])
-                outputs = session.run(None, {session.get_inputs()[0].name: tensor})
-                if is_factored:
-                    rw_vals.append(outputs[2][0])
-                else:
-                    rw_vals.append(outputs[1][0])
-            print(f"  Black-to-move, Red won:   val_pred mean={np.mean(rw_vals):.4f} (should be > 0)")
+            rw_vals = [value_of(predict(s)) for s in red_wins[:20]]
+            expect = "< 0" if black_wins_positive else "> 0"
+            print(f"  Black-to-move, Red won:   val_pred mean={np.mean(rw_vals):.4f} (should be {expect})")
 
     # ─── Check 2: Policy quality ──────────────────────────────────────
     print("\n" + "=" * 70)
@@ -147,30 +193,17 @@ def main():
     n = min(200, len(samples))
 
     for s in samples[:n]:
-        tensor = encode_cnn(s["BoardEncoding"])
-        outputs = session.run(None, {session.get_inputs()[0].name: tensor})
+        outputs = predict(s)
 
         selected = s["SelectedMove"]
-        legal = s["LegalMoves"]
         from_target = selected // BOARD_SIZE
         to_target = selected % BOARD_SIZE
 
         if is_factored:
-            from_logits = outputs[0][0]  # [90]
-            to_logits = outputs[1][0]    # [90]
-            combined = from_logits.reshape(90, 1) + to_logits.reshape(1, 90)
-            combined_flat = combined.flatten()
+            from_hit += (np.argmax(outputs[0][0]) == from_target)
+            to_hit += (np.argmax(outputs[1][0]) == to_target)
 
-            from_hit += (np.argmax(from_logits) == from_target)
-            to_hit += (np.argmax(to_logits) == to_target)
-        else:
-            combined_flat = outputs[0][0]  # [8100]
-
-        # Legal masking
-        masked = combined_flat.copy()
-        illegal_mask = np.ones(ACTION_DIM, dtype=bool)
-        illegal_mask[legal] = False
-        masked[illegal_mask] = -1e9
+        masked = masked_of(outputs, s["LegalMoves"])
 
         top1 = np.argmax(masked)
         top5 = np.argsort(masked)[-5:][::-1]
@@ -196,23 +229,10 @@ def main():
     val_preds = []
     val_targets = []
     for s in samples[:200]:
-        tensor = encode_cnn(s["BoardEncoding"])
-        outputs = session.run(None, {session.get_inputs()[0].name: tensor})
-
-        if is_factored:
-            val = outputs[2][0]
-        else:
-            val = outputs[1][0]
-
-        # Convert value to current player's perspective
+        outputs = predict(s)
         side_to_move = s["SideToMove"]
-        val_player = val * side_to_move  # +1 = current player winning
-
-        # Convert result to current player's perspective
-        result_player = s["Result"] * side_to_move
-
-        val_preds.append(val_player)
-        val_targets.append(result_player)
+        val_preds.append(value_to_player_perspective(value_of(outputs), side_to_move, planes))
+        val_targets.append(s["Result"] * side_to_move)
 
     val_preds = np.array(val_preds)
     val_targets = np.array(val_targets)
@@ -245,25 +265,8 @@ def main():
 
         t1 = t5 = t10 = 0
         for s in side_samples:
-            tensor = encode_cnn(s["BoardEncoding"])
-            outputs = session.run(None, {session.get_inputs()[0].name: tensor})
-
+            masked = masked_of(predict(s), s["LegalMoves"])
             selected = s["SelectedMove"]
-            legal = s["LegalMoves"]
-
-            if is_factored:
-                from_logits = outputs[0][0]
-                to_logits = outputs[1][0]
-                combined = from_logits.reshape(90, 1) + to_logits.reshape(1, 90)
-                combined_flat = combined.flatten()
-            else:
-                combined_flat = outputs[0][0]
-
-            masked = combined_flat.copy()
-            illegal_mask = np.ones(ACTION_DIM, dtype=bool)
-            illegal_mask[legal] = False
-            masked[illegal_mask] = -1e9
-
             t1 += (np.argmax(masked) == selected)
             t5 += (selected in np.argsort(masked)[-5:][::-1])
             t10 += (selected in np.argsort(masked)[-10:][::-1])
@@ -278,30 +281,13 @@ def main():
 
     entropies = []
     for s in samples[:100]:
-        tensor = encode_cnn(s["BoardEncoding"])
-        outputs = session.run(None, {session.get_inputs()[0].name: tensor})
-
-        if is_factored:
-            from_logits = outputs[0][0]
-            to_logits = outputs[1][0]
-            combined = from_logits.reshape(90, 1) + to_logits.reshape(1, 90)
-            combined_flat = combined.flatten()
-        else:
-            combined_flat = outputs[0][0]
-
-        legal = s["LegalMoves"]
-        masked = combined_flat.copy()
-        illegal_mask = np.ones(ACTION_DIM, dtype=bool)
-        illegal_mask[legal] = False
-        masked[illegal_mask] = -1e9
-
+        masked = masked_of(predict(s), s["LegalMoves"])
         probs = softmax(masked)
         # Entropy of legal move distribution
-        legal_probs = probs[legal]
+        legal_probs = probs[s["LegalMoves"]]
         entropy = -np.sum(legal_probs * np.log(legal_probs + 1e-10))
         entropies.append(entropy)
 
-    max_entropy = np.log(len(samples[0]["LegalMoves"]))  # approximate max
     print(f"  Mean entropy: {np.mean(entropies):.2f}")
     print(f"  Min entropy:  {np.min(entropies):.2f}")
     print(f"  Max entropy:  {np.max(entropies):.2f}")
@@ -320,7 +306,8 @@ Key issues to check:
 4. If Top-1 is very low but Top-10 is ok → model has some signal but needs search
 5. If the model doesn't know whose turn it is → add side-to-move planes
 """)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

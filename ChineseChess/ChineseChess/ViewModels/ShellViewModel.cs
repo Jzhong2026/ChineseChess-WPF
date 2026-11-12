@@ -124,7 +124,7 @@ public sealed class ShellViewModel :
         SidePanel.AiEngineMode = message.Mode;
         if (message.Mode != AiEngineMode.Classic)
         {
-            TryInitNeuralAi();
+            await TryInitNeuralAiAsync();
         }
         await ResetGame();
     }
@@ -158,7 +158,7 @@ public sealed class ShellViewModel :
 
     private bool IsGameOver => _state.Status is GameStatus.RedWins or GameStatus.BlackWins or GameStatus.Draw;
 
-    private void TryInitNeuralAi()
+    private async Task TryInitNeuralAiAsync()
     {
         if (_neuralAi is not null) return;
         var modelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, OnnxModelPath);
@@ -167,10 +167,16 @@ public sealed class ShellViewModel :
             SidePanel.NeuralAiInfo = $"⚠ 模型文件不存在: {OnnxModelPath}";
             return;
         }
+
+        SidePanel.NeuralAiInfo = "神经网络加载中…";
         try
         {
-            _neuralAi = new XiangqiNeuralAiService(modelPath, _engine, isCnnModel: true);
-            _mctsAi = new MctsAiService(_neuralAi, _engine);
+            // InferenceSession construction does native model loading and would
+            // freeze the UI if it ran on the dispatcher thread.
+            var engine = _engine;
+            var neural = await Task.Run(() => new XiangqiNeuralAiService(modelPath, engine, isCnnModel: true));
+            _neuralAi = neural;
+            _mctsAi = new MctsAiService(neural, engine);
             SidePanel.NeuralAiInfo = "神经网络已加载";
         }
         catch (Exception ex)
@@ -212,56 +218,36 @@ public sealed class ShellViewModel :
         var tokenSource = new CancellationTokenSource();
         _aiCancellation = tokenSource;
         var token = tokenSource.Token;
+        var snapshot = _state;
+        var thinkMs = Math.Max(100, SidePanel.AiTimeLimitMs);
         SidePanel.AiThinking = true;
-        SidePanel.AiCountdown = 1200;
+        SidePanel.AiCountdown = thinkMs;
         await PublishBoardState();
 
         try
         {
-            for (var remaining = 1200; remaining > 0; remaining -= 100)
+            // Search starts immediately and the countdown runs against the same
+            // budget, so the displayed time reflects real thinking time. The
+            // countdown only touches its own bound property — republishing the
+            // whole board every 100ms rebuilt the move list and all 90 squares.
+            var searchTask = Task.Run(() => RunAiSearch(snapshot), token);
+            for (var remaining = thinkMs; remaining > 0 && !searchTask.IsCompleted; remaining -= 100)
             {
                 token.ThrowIfCancellationRequested();
                 SidePanel.AiCountdown = remaining;
-                await PublishBoardState();
                 await Task.Delay(100, token);
             }
 
-            var snapshot = _state;
-            Move? chosenMove;
-
-            if (SidePanel.AiEngineMode == AiEngineMode.Neural && _neuralAi is not null)
-            {
-                // Pure neural network policy (no search)
-                var move = await Task.Run(() => _neuralAi.ChooseMoveByPolicy(snapshot.Board, snapshot.Turn, snapshot.History), token);
-                chosenMove = move;
-                SidePanel.SearchStats = null;
-                SidePanel.NeuralAiInfo = $"NN Policy | Value: {_neuralAi.EvaluatePosition(snapshot.Board, snapshot.Turn):+0.00;-0.00;0.00}";
-            }
-            else if (SidePanel.AiEngineMode == AiEngineMode.NeuralMcts && _mctsAi is not null)
-            {
-                // MCTS + Neural network
-                var mctsResult = await Task.Run(() => _mctsAi.Search(
-                    snapshot.Board, snapshot.Turn, snapshot.History,
-                    simulations: SidePanel.MctsSimulations,
-                    temperature: 0f,
-                    timeLimitMs: SidePanel.AiTimeLimitMs), token);
-                chosenMove = mctsResult.BestMove;
-                SidePanel.SearchStats = null;
-                SidePanel.NeuralAiInfo = $"MCTS {mctsResult.SimulationsRun} sims | Q: {mctsResult.BestQ:+0.00;-0.00;0.00}";
-            }
-            else
-            {
-                // Classic Alpha-Beta
-                var result = await Task.Run(() => _ai.ChooseMove(snapshot.Board, snapshot.Turn, SidePanel.AiLevel, snapshot.History, SidePanel.AiTimeLimitMs), token);
-                chosenMove = result.Move;
-                SidePanel.SearchStats = result.Stats;
-                SidePanel.NeuralAiInfo = null;
-            }
-
+            var outcome = await searchTask;
             token.ThrowIfCancellationRequested();
-            if (chosenMove is not null)
+
+            SidePanel.SearchStats = outcome.Stats;
+            SidePanel.NeuralAiInfo = outcome.NeuralInfo;
+            SidePanel.AiCountdown = 0;
+
+            if (outcome.Move is not null)
             {
-                _state = _engine.MakeMove(snapshot, chosenMove);
+                _state = _engine.MakeMove(snapshot, outcome.Move);
                 _sound.PlayForStatus(_state.Status);
             }
         }
@@ -276,6 +262,7 @@ public sealed class ShellViewModel :
                 SidePanel.AiThinking = false;
                 SidePanel.AiCountdown = 0;
                 _aiCancellation = null;
+                tokenSource.Dispose();
             }
         }
 
@@ -284,6 +271,37 @@ public sealed class ShellViewModel :
         {
             MessageBox.Show(GameOverText(), "对局结束", MessageBoxButton.OK, MessageBoxImage.Information);
         }
+    }
+
+    private sealed record AiTurnOutcome(Move? Move, SearchStats? Stats, string? NeuralInfo);
+
+    /// <summary>Runs on a worker thread; returns results so the UI thread applies them.</summary>
+    private AiTurnOutcome RunAiSearch(GameState snapshot)
+    {
+        if (SidePanel.AiEngineMode == AiEngineMode.Neural && _neuralAi is not null)
+        {
+            var move = _neuralAi.ChooseMoveByPolicy(snapshot.Board, snapshot.Turn, snapshot.History);
+            var value = _neuralAi.EvaluatePosition(snapshot.Board, snapshot.Turn);
+            return new AiTurnOutcome(move, null, $"NN Policy | Value: {value:+0.00;-0.00;0.00}");
+        }
+
+        if (SidePanel.AiEngineMode == AiEngineMode.NeuralMcts && _mctsAi is not null)
+        {
+            var mcts = _mctsAi.Search(
+                snapshot.Board, snapshot.Turn, snapshot.History,
+                simulations: SidePanel.MctsSimulations,
+                temperature: 0f,
+                timeLimitMs: SidePanel.AiTimeLimitMs);
+            return new AiTurnOutcome(mcts.BestMove, null, $"MCTS {mcts.SimulationsRun} sims | Q: {mcts.BestQ:+0.00;-0.00;0.00}");
+        }
+
+        var classic = _ai.ChooseMove(snapshot.Board, snapshot.Turn, SidePanel.AiLevel, snapshot.History, SidePanel.AiTimeLimitMs);
+        // A neural mode was requested but is unavailable: keep the reason visible
+        // rather than clearing it, so the UI does not silently look like NN play.
+        var fallback = SidePanel.AiEngineMode == AiEngineMode.Classic
+            ? null
+            : "⚠ 神经网络不可用，已回退传统搜索";
+        return new AiTurnOutcome(classic.Move, classic.Stats, fallback);
     }
 
     private string GameOverText() => _state.Status switch

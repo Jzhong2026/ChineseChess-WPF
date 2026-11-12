@@ -75,37 +75,30 @@ public sealed class MctsAiService
             if (watch.ElapsedMilliseconds >= timeLimitMs) break;
 
             // 1. Selection — traverse to a leaf
-            var path = new List<(MctsNode Node, int ActionId)>();
+            var path = new List<(MctsNode Node, int ChildIndex)>();
             var node = root;
             var currentHistory = new List<Move>(history);
 
             while (!node.IsLeaf)
             {
-                var (bestChild, bestAction) = SelectChild(node);
-                path.Add((node, bestAction));
-                currentHistory.Add(node.ChildMoves![bestAction]!);
+                var (bestChild, bestIndex) = SelectChild(node);
+                path.Add((node, bestIndex));
+                currentHistory.Add(node.ChildMoves![bestIndex]!);
                 node = bestChild;
             }
 
-            // 2. Expansion & Evaluation
+            // 2. Expansion & Evaluation — ExpandNode already generates the legal
+            // list, so terminal detection reuses it instead of a second
+            // GetGameStatus/GetLegalMoves pass over the same position.
+            if (node.IsLeaf && !node.IsTerminal) ExpandNode(node, currentHistory);
             float value;
-            var status = _engine.GetGameStatus(node.Board, node.Side, currentHistory);
-            if (status == GameStatus.RedWins)
+            if (node.IsTerminal)
             {
-                value = node.Side == Side.Red ? -1f : 1f;  // game already over, current mover lost
-            }
-            else if (status == GameStatus.BlackWins)
-            {
-                value = node.Side == Side.Black ? -1f : 1f;
-            }
-            else if (status == GameStatus.Draw)
-            {
-                value = 0f;
+                // No legal move for the side to move means it lost (mate or stalemate).
+                value = -1f;
             }
             else
             {
-                // Expand + evaluate with NN (single inference, value cached in ExpandNode)
-                ExpandNode(node, currentHistory);
                 // CachedValue is already from current player's perspective for V5 models.
                 // For legacy models, flip for Black.
                 value = _neural.IsV5Model
@@ -114,24 +107,35 @@ public sealed class MctsAiService
             }
 
             // 3. Backpropagation
-            // 'value' is from node.Side perspective, flip as we go up
-            var backValue = value;
-            for (var i = path.Count - 1; i >= 0; i--)
-            {
-                var (parent, actionId) = path[i];
-                backValue = -backValue;  // flip perspective
-                parent.ChildN![actionId]++;
-                parent.ChildW![actionId] += backValue;
-            }
-            root.VisitCount++;
+            BackupValue(node, path, value);
         }
 
         return BuildResult(root, temperature, sim);
     }
 
+    /// <summary>
+    /// Propagates a leaf evaluation up the path. <paramref name="value"/> is from
+    /// <paramref name="leaf"/>'s side-to-move perspective, so it flips at every ply.
+    /// </summary>
+    internal static void BackupValue(MctsNode leaf, List<(MctsNode Node, int ChildIndex)> path, float value)
+    {
+        // SelectChild reads VisitCount at every depth, so every node on the path
+        // must be counted — not just the root — or sqrt(N) collapses to 0 below it.
+        leaf.VisitCount++;
+        var backValue = value;
+        for (var i = path.Count - 1; i >= 0; i--)
+        {
+            var (parent, childIndex) = path[i];
+            backValue = -backValue;  // flip perspective
+            parent.ChildN![childIndex]++;
+            parent.ChildW![childIndex] += backValue;
+            parent.VisitCount++;
+        }
+    }
+
     // ─── Private helpers ────────────────────────────────────────────────────
 
-    private void ExpandNode(MctsNode node, IReadOnlyList<Move> history)
+    internal void ExpandNode(MctsNode node, IReadOnlyList<Move> history)
     {
         if (!node.IsLeaf) return;
 
@@ -146,102 +150,90 @@ public sealed class MctsAiService
         var (policyLogits, valuePred) = _neural.RunInference(node.Board, node.Side);
         node.CachedValue = valuePred[0];  // Cache value for use in Search loop
 
-        // Convert policy logits to probabilities (softmax over legal moves)
-        var legalActionIds = legalMoves.Select(m => MoveEncoder.Encode(m)).ToArray();
-        var legalLogits = new float[legalActionIds.Length];
-        for (var i = 0; i < legalActionIds.Length; i++)
-            legalLogits[i] = policyLogits[0, legalActionIds[i]];
-
-        // Softmax
-        var maxLogit = legalLogits.Max();
+        // Softmax over legal moves only; child storage is indexed by legal-move
+        // ordinal, NOT by the 8100-wide action id (five 8100 arrays cost 221 KB/node).
+        var count = legalMoves.Count;
+        var probs = new float[count];
+        var maxLogit = float.NegativeInfinity;
+        for (var i = 0; i < count; i++)
+        {
+            probs[i] = policyLogits[0, MoveEncoder.Encode(legalMoves[i])];
+            if (probs[i] > maxLogit) maxLogit = probs[i];
+        }
         var expSum = 0f;
-        for (var i = 0; i < legalLogits.Length; i++)
+        for (var i = 0; i < count; i++)
         {
-            legalLogits[i] = MathF.Exp(legalLogits[i] - maxLogit);
-            expSum += legalLogits[i];
-        }
-        var probs = new float[legalActionIds.Length];
-        for (var i = 0; i < probs.Length; i++)
-            probs[i] = legalLogits[i] / expSum;
-
-        var probByAction = new Dictionary<int, float>();
-        for (var i = 0; i < legalActionIds.Length; i++)
-            probByAction[legalActionIds[i]] = probs[i];
-
-        node.Children = new MctsNode[MoveEncoder.ActionCount];
-        node.ChildMoves = new Move?[MoveEncoder.ActionCount];
-        node.ChildN = new int[MoveEncoder.ActionCount];
-        node.ChildW = new float[MoveEncoder.ActionCount];
-        node.ChildP = new float[MoveEncoder.ActionCount];
-
-        foreach (var move in legalMoves)
-        {
-            var actionId = MoveEncoder.Encode(move);
-            var nextBoard = _engine.ApplyMove(node.Board, move);
-            var prior = probByAction.TryGetValue(actionId, out var p) ? p : 0f;
-            node.Children[actionId] = new MctsNode(node, prior, nextBoard, _engine.Opposite(node.Side));
-            node.ChildMoves[actionId] = move;
-            node.ChildP[actionId] = prior;
+            probs[i] = MathF.Exp(probs[i] - maxLogit);
+            expSum += probs[i];
         }
 
-        node.LegalActionIds = legalMoves.Select(m => MoveEncoder.Encode(m)).ToArray();
+        node.Children = new MctsNode?[count];
+        node.ChildMoves = new Move?[count];
+        node.ChildN = new int[count];
+        node.ChildW = new float[count];
+        node.ChildP = new float[count];
+
+        for (var i = 0; i < count; i++)
+        {
+            var move = legalMoves[i];
+            var prior = probs[i] / expSum;
+            node.Children[i] = new MctsNode(node, prior, _engine.ApplyMove(node.Board, move), _engine.Opposite(node.Side));
+            node.ChildMoves[i] = move;
+            node.ChildP[i] = prior;
+        }
+
         node.IsLeaf = false;
     }
 
-    private static (MctsNode Child, int ActionId) SelectChild(MctsNode node)
+    private static (MctsNode Child, int ChildIndex) SelectChild(MctsNode node)
     {
         var sqrtN = MathF.Sqrt(node.VisitCount);
         var bestScore = float.NegativeInfinity;
         MctsNode? bestChild = null;
-        var bestAction = 0;
+        var bestIndex = 0;
 
-        foreach (var actionId in node.LegalActionIds!)
+        for (var i = 0; i < node.ChildN!.Length; i++)
         {
-            var child = node.Children![actionId];
-            var n = node.ChildN![actionId];
-            var q = n > 0 ? node.ChildW![actionId] / n : 0f;
-            var p = node.ChildP![actionId];
-            var u = CPuct * p * sqrtN / (1 + n);
+            var n = node.ChildN[i];
+            var q = n > 0 ? node.ChildW![i] / n : 0f;
+            var u = CPuct * node.ChildP![i] * sqrtN / (1 + n);
             var score = q + u;
 
             if (score > bestScore)
             {
                 bestScore = score;
-                bestChild = child;
-                bestAction = actionId;
+                bestChild = node.Children![i];
+                bestIndex = i;
             }
         }
 
-        return (bestChild!, bestAction);
+        return (bestChild!, bestIndex);
     }
 
     private static void AddDirichletNoise(MctsNode root)
     {
-        if (root.LegalActionIds is null || root.LegalActionIds.Length == 0) return;
+        if (root.ChildP is null || root.ChildP.Length == 0) return;
 
-        var noise = SampleDirichlet(DirichletAlpha, root.LegalActionIds.Length);
-        for (var i = 0; i < root.LegalActionIds.Length; i++)
-        {
-            var actionId = root.LegalActionIds[i];
-            root.ChildP![actionId] = (1 - DirichletEpsilon) * root.ChildP[actionId] + DirichletEpsilon * noise[i];
-        }
+        var noise = SampleDirichlet(DirichletAlpha, root.ChildP.Length);
+        for (var i = 0; i < root.ChildP.Length; i++)
+            root.ChildP[i] = (1 - DirichletEpsilon) * root.ChildP[i] + DirichletEpsilon * noise[i];
     }
 
     private MctsResult BuildResult(MctsNode root, float temperature, int simulationsRun)
     {
-        if (root.LegalActionIds is null || root.LegalActionIds.Length == 0)
+        if (root.ChildMoves is null || root.ChildMoves.Length == 0)
             return new MctsResult(null, Array.Empty<(Move, int, float)>(), simulationsRun, 0f);
 
         Move? bestMove = null;
         var stats = new List<(Move Move, int Visits, float Q)>();
         var maxVisits = 0;
 
-        foreach (var actionId in root.LegalActionIds)
+        for (var i = 0; i < root.ChildMoves.Length; i++)
         {
-            var move = root.ChildMoves![actionId];
+            var move = root.ChildMoves[i];
             if (move is null) continue;
-            var n = root.ChildN![actionId];
-            var q = n > 0 ? root.ChildW![actionId] / n : 0f;
+            var n = root.ChildN![i];
+            var q = n > 0 ? root.ChildW![i] / n : 0f;
             stats.Add((move, n, q));
             if (n > maxVisits) { maxVisits = n; bestMove = move; }
         }
@@ -330,13 +322,12 @@ internal sealed class MctsNode
     public bool IsLeaf { get; set; } = true;
     public bool IsTerminal { get; set; }
 
-    // Per-action arrays (indexed by MoveEncoder.Encode output)
+    // Per-action arrays, indexed by legal-move ordinal (0..legalCount-1).
     public MctsNode?[]? Children { get; set; }
     public Move?[]? ChildMoves { get; set; }
     public int[]? ChildN { get; set; }
     public float[]? ChildW { get; set; }
     public float[]? ChildP { get; set; }
-    public int[]? LegalActionIds { get; set; }
 
     /// <summary>
     /// Cached value prediction from NN (current player's perspective).

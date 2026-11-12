@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using ChineseChess.Models;
 
 namespace ChineseChess.Services;
@@ -25,11 +25,9 @@ public sealed class XiangqiAiService
 
     private const int BoardSize = XiangqiEngine.BoardRows * XiangqiEngine.BoardCols;  // 90
     private const int MaxKillerDepth = 32;        // covers Negamax + Quiescence
+    private const double MateScore = 999999;
 
-    private const ulong ZobristSeed = 0x9E3779B97F4A7C15UL;
     private const int MaxTranspositionEntries = 250_000;
-    private static readonly ulong[,,,] ZobristPieces = CreateZobristPieces();
-    private static readonly ulong[] ZobristTurn = { NextZobristValue(0), NextZobristValue(1) };
 
     private static readonly IReadOnlyDictionary<PieceType, int> PieceValues = new Dictionary<PieceType, int>
     {
@@ -102,6 +100,10 @@ public sealed class XiangqiAiService
             var beta = double.PositiveInfinity;
 
             var iterRootScores = new List<(Move Move, double Score)>(legalMoves.Count);
+            // Sampling near-best moves needs EXACT root scores. A rising alpha makes
+            // later moves fail low and return upper bounds, which silently shrinks the
+            // candidate pool toward whatever the move ordering put first.
+            var sampling = effectiveSelectionOptions.EnableRandomSelection;
             foreach (var move in legalMoves)
             {
                 if (watch.ElapsedMilliseconds >= deadline)
@@ -116,7 +118,7 @@ public sealed class XiangqiAiService
                     _engine.Opposite(side),
                     depth - 1,
                     -beta,
-                    -alpha,
+                    sampling ? double.PositiveInfinity : -alpha,
                     _engine.Opposite(side),
                     side,
                     history.Concat(new[] { move }).ToList(),
@@ -140,7 +142,7 @@ public sealed class XiangqiAiService
                     }
                 }
 
-                if (!aborted) alpha = Math.Max(alpha, score);
+                if (!aborted && !sampling) alpha = Math.Max(alpha, score);
             }
 
             if (!aborted)
@@ -205,7 +207,7 @@ public sealed class XiangqiAiService
         if ((nodes & 0x3f) == 0 && watch.ElapsedMilliseconds >= deadline) aborted = true;
         if (aborted) return 0;
 
-        var hash = ComputeZobristHash(board, turn);
+        var hash = ZobristHash.Compute(board, turn);
         Move? ttBestMove = null;
         if (_transpositionTable.TryGetValue(hash, out var entry))
         {
@@ -234,15 +236,20 @@ public sealed class XiangqiAiService
             }
         }
 
-        var status = _engine.GetGameStatus(board, turn);
-        if (status == GameStatus.RedWins) return perspective == Side.Red ? 999999 - depthFromRoot : -999999 + depthFromRoot;
-        if (status == GameStatus.BlackWins) return perspective == Side.Black ? 999999 - depthFromRoot : -999999 + depthFromRoot;
-        if (status == GameStatus.Draw) return 0;
+        // Generate the legal list ONCE: it serves terminal detection, move
+        // ordering and the search loop. GetGameStatus used to regenerate the
+        // whole list just to test Count > 0 and then throw it away.
+        var moves = OrderMoves(board, _engine.GetLegalMoves(board, turn, history), ttBestMove, depthFromRoot).ToList();
+        if (moves.Count == 0)
+        {
+            // Checkmate and stalemate are both a loss for the side to move.
+            // perspective == turn at every node, so this is already negamax-signed.
+            return -MateScore + depthFromRoot;
+        }
         if (depth <= 0) return Quiescence(board, turn, alpha, beta, perspective, aiSide, history, watch, deadline, ref nodes, ref aborted, depthFromRoot, 0);
 
         var best = double.NegativeInfinity;
         Move? bestMove = null;
-        var moves = OrderMoves(board, _engine.GetLegalMoves(board, turn, history), ttBestMove, depthFromRoot);
         foreach (var move in moves)
         {
             if (aborted) break;
@@ -308,7 +315,7 @@ public sealed class XiangqiAiService
         return best;
     }
 
-    private double Quiescence(
+    internal double Quiescence(
         Piece?[,] board,
         Side turn,
         double alpha,
@@ -323,12 +330,34 @@ public sealed class XiangqiAiService
         int depthFromRoot,
         int qDepth)
     {
-        var standPat = EvaluateBoard(board, perspective, aiSide);
-        if (standPat >= beta) return beta;
-        if (alpha < standPat) alpha = standPat;
-        if (qDepth >= 8) return alpha;
+        if ((nodes & 0x3f) == 0 && watch.ElapsedMilliseconds >= deadline) aborted = true;
+        if (aborted) return 0;
 
-        var tacticalMoves = OrderMoves(board, _engine.GetLegalMoves(board, turn, history).Where(move => move.Captured is not null), depth: depthFromRoot);
+        var inCheck = _engine.IsInCheck(board, turn);
+        var legalMoves = _engine.GetLegalMoves(board, turn, history);
+        if (legalMoves.Count == 0) return -MateScore + depthFromRoot;
+
+        if (inCheck)
+        {
+            // Passing is illegal while in check, so the static score is NOT a
+            // lower bound. The worst case is being mated, which is a valid floor
+            // and keeps alpha from staying at -Infinity when evasions fail low.
+            var mateFloor = -MateScore + depthFromRoot;
+            if (alpha < mateFloor) alpha = mateFloor;
+        }
+        else
+        {
+            var standPat = EvaluateBoard(board, perspective, aiSide);
+            if (standPat >= beta) return beta;
+            if (alpha < standPat) alpha = standPat;
+        }
+        if (qDepth >= 8) return inCheck ? EvaluateBoard(board, perspective, aiSide) : alpha;
+
+        // In check every legal move is an evasion and must be searched; otherwise
+        // only captures are tactical.
+        var tacticalMoves = OrderMoves(board,
+            inCheck ? legalMoves : legalMoves.Where(move => move.Captured is not null),
+            depth: depthFromRoot);
         foreach (var move in tacticalMoves)
         {
             if ((nodes & 0x3f) == 0 && watch.ElapsedMilliseconds >= deadline) aborted = true;
@@ -419,51 +448,6 @@ public sealed class XiangqiAiService
     private static bool SameMove(Move left, Move right) => left.From == right.From && left.To == right.To;
 
     private static bool SameMoveNullable(Move? left, Move right) => left is Move m && m.From == right.From && m.To == right.To;
-
-    private static ulong ComputeZobristHash(Piece?[,] board, Side turn)
-    {
-        var hash = ZobristTurn[(int)turn];
-        for (var row = 0; row < XiangqiEngine.BoardRows; row++)
-        {
-            for (var col = 0; col < XiangqiEngine.BoardCols; col++)
-            {
-                var piece = board[row, col];
-                if (piece is null) continue;
-                hash ^= ZobristPieces[row, col, (int)piece.Side, (int)piece.Type];
-            }
-        }
-
-        return hash;
-    }
-
-    private static ulong[,,,] CreateZobristPieces()
-    {
-        var values = new ulong[XiangqiEngine.BoardRows, XiangqiEngine.BoardCols, 2, 7];
-        var index = 2;
-        for (var row = 0; row < XiangqiEngine.BoardRows; row++)
-        {
-            for (var col = 0; col < XiangqiEngine.BoardCols; col++)
-            {
-                for (var side = 0; side < 2; side++)
-                {
-                    for (var type = 0; type < 7; type++)
-                    {
-                        values[row, col, side, type] = NextZobristValue(index++);
-                    }
-                }
-            }
-        }
-
-        return values;
-    }
-
-    private static ulong NextZobristValue(int index)
-    {
-        var value = ZobristSeed + (ulong)index * 0x9E3779B97F4A7C15UL;
-        value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
-        value = (value ^ (value >> 27)) * 0x94D049BB133111EBUL;
-        return value ^ (value >> 31);
-    }
 
     private double EvaluateBoard(Piece?[,] board, Side perspective, Side aiSide)
     {
@@ -635,7 +619,7 @@ public sealed class XiangqiAiService
         (-1,  2,  0,  1), ( 1,  2,  0,  1),
     };
 
-    private static int CountHorseMoves(Piece?[,] board, int r, int c, Piece piece)
+    internal static int CountHorseMoves(Piece?[,] board, int r, int c, Piece piece)
     {
         var count = 0;
         foreach (var (dr, dc, lr, lc) in HorseMoves)
@@ -647,7 +631,9 @@ public sealed class XiangqiAiService
             var nr = r + dr;
             var nc = c + dc;
             if (nr < 0 || nr >= XiangqiEngine.BoardRows || nc < 0 || nc >= XiangqiEngine.BoardCols) continue;
-            count++;  // horse always lands on empty or enemy square; both are "mobile"
+            var landing = board[nr, nc];
+            if (landing is not null && landing.Side == piece.Side) continue;  // own piece blocks the square
+            count++;  // empty square or capture
         }
         return count;
     }
@@ -694,19 +680,28 @@ public sealed class XiangqiAiService
         return score;
     }
 
-    private static bool IsAdvisorSlot(Side side, int row, int col)
+    internal static bool IsAdvisorSlot(Side side, int row, int col)
     {
-        // Advisor legal slots: (3,3), (3,5), (5,3), (5,5) for Red; mirrored for Black.
+        // Advisor moves one step diagonally inside the palace: four corners + centre.
+        var backRow = side == Side.Red ? 9 : 0;
+        var frontRow = side == Side.Red ? 7 : 2;
+        var centreRow = side == Side.Red ? 8 : 1;
+        if (col == 4) return row == centreRow;
         if (col != 3 && col != 5) return false;
-        return side == Side.Red ? (row == 7 || row == 9) : (row == 0 || row == 2);
+        return row == backRow || row == frontRow;
     }
 
-    private static bool IsElephantSlot(Side side, int row, int col)
+    internal static bool IsElephantSlot(Side side, int row, int col)
     {
-        // Elephant legal slots: (0,2), (0,6), (2,4), (4,2), (4,6), (6,4) etc. — keep it simple:
-        // elephants always start on row 9 (Red) / row 0 (Black) at cols 2 and 6.
-        if (col != 2 && col != 6) return false;
-        return side == Side.Red ? (row == 9 || row == 7 || row == 5) : (row == 0 || row == 2 || row == 4);
+        // Elephant moves two steps diagonally and never crosses the river, so it
+        // can only ever stand on seven squares: two on the back rank, three on
+        // the middle rank (including the centre), two on the river bank.
+        var backRow = side == Side.Red ? 9 : 0;
+        var midRow = side == Side.Red ? 7 : 2;
+        var bankRow = side == Side.Red ? 5 : 4;
+        if (row == backRow || row == bankRow) return col == 2 || col == 6;
+        if (row == midRow) return col == 0 || col == 4 || col == 8;
+        return false;
     }
 
     private static int CountAttackersNearKing(Piece?[,] board, int kingRow, int kingCol, Side enemySide)

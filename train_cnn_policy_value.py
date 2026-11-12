@@ -420,6 +420,7 @@ def train(args: argparse.Namespace) -> None:
                 "architecture": "cnn_factored_v5",
                 "channels": args.channels,
                 "res_blocks": args.res_blocks,
+                "policy_channels": 2,  # this head is fixed at 2 channels; export needs it explicitly
                 "policy_dropout": args.policy_dropout,
                 "value_dropout": args.value_dropout,
                 "planes": INPUT_PLANES,
@@ -509,6 +510,7 @@ def train(args: argparse.Namespace) -> None:
                         "architecture": "cnn_factored_v5",
                         "channels": args.channels,
                         "res_blocks": args.res_blocks,
+                        "policy_channels": 2,
                         "policy_dropout": args.policy_dropout,
                         "value_dropout": args.value_dropout,
                         "planes": INPUT_PLANES,
@@ -525,6 +527,7 @@ def train(args: argparse.Namespace) -> None:
         "architecture": "cnn_factored_v5",
         "channels": args.channels,
         "res_blocks": args.res_blocks,
+        "policy_channels": 2,
         "policy_dropout": args.policy_dropout,
         "value_dropout": args.value_dropout,
         "planes": INPUT_PLANES,

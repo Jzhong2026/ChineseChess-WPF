@@ -131,6 +131,16 @@ def _remap_legal_moves(legal_moves, flip_columns=False):
     return new_indices
 
 
+def _input_fingerprint(jsonl_path):
+    p = Path(jsonl_path).resolve()
+    st = p.stat()
+    return {"path": str(p), "size": st.st_size, "mtime": st.st_mtime}
+
+
+def _cache_matches(meta, fingerprint):
+    return meta.get("input_fingerprint") == fingerprint
+
+
 def preprocess_jsonl(jsonl_path: str, chunk_dir: str):
     """
     Read JSONL line by line, group into chunks, save each chunk as a .pt file.
@@ -209,7 +219,8 @@ def preprocess_jsonl(jsonl_path: str, chunk_dir: str):
           f"({skipped} skipped, {line_no - total_samples - skipped} filtered).")
 
     # Save metadata
-    meta = {"num_chunks": chunk_idx, "total_samples": total_samples, "chunk_size": CHUNK_SIZE}
+    meta = {"num_chunks": chunk_idx, "total_samples": total_samples, "chunk_size": CHUNK_SIZE,
+            "input_fingerprint": _input_fingerprint(jsonl_path)}
     torch.save(meta, os.path.join(chunk_dir, "meta.pt"))
     return chunk_idx, total_samples
 
@@ -282,6 +293,7 @@ class ChunkedDataset(Dataset):
             f_c = BOARD_COLS - 1 - f_c
             t_c = BOARD_COLS - 1 - t_c
             move = torch.tensor((f_r * BOARD_COLS + f_c) * BOARD_SIZE + (t_r * BOARD_COLS + t_c), dtype=torch.long)
+            legal = _remap_legal_moves(legal.tolist(), flip_columns=True)
 
         legal_mask = torch.zeros(ACTION_DIM, dtype=torch.bool)
         legal_mask[legal] = True
@@ -308,12 +320,20 @@ def train():
 
     chunk_dir = args.chunk_dir
 
-    # Step 1: Preprocess JSONL → chunked .pt files (if not already done)
-    if not os.path.exists(os.path.join(chunk_dir, "meta.pt")):
+    # Step 1: Preprocess JSONL → chunked .pt files (only reuse chunks built from this exact input)
+    meta_path = os.path.join(chunk_dir, "meta.pt")
+    fingerprint = _input_fingerprint(args.input)
+    meta = None
+    if os.path.exists(meta_path):
+        meta = torch.load(meta_path, weights_only=True)
+        if not _cache_matches(meta, fingerprint):
+            print("Cached chunks were built from a different --input; rebuilding...", flush=True)
+            meta = None
+
+    if meta is None:
         print("Preprocessing JSONL into chunks...", flush=True)
         num_chunks, total_samples = preprocess_jsonl(args.input, chunk_dir)
     else:
-        meta = torch.load(os.path.join(chunk_dir, "meta.pt"), weights_only=True)
         num_chunks = meta["num_chunks"]
         total_samples = meta["total_samples"]
         print(f"Using existing chunks: {num_chunks} chunks, {total_samples} samples", flush=True)
@@ -469,6 +489,10 @@ def train():
             torch.save({
                 "model_state_dict": model.state_dict(),
                 "architecture": "cnn_full_v7",
+                "channels": ckpt.get("channels", 64),
+                "res_blocks": ckpt.get("res_blocks", 6),
+                "policy_channels": ckpt.get("policy_channels", 8),
+                "planes": INPUT_PLANES,
                 "epoch": epoch,
             }, periodic_path)
             print(f"  Periodic checkpoint: {periodic_path.name}", flush=True)

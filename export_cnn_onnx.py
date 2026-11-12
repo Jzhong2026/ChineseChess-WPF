@@ -173,6 +173,30 @@ class CNNPolicyValueNet(nn.Module):
         return policy_logits, value_pred
 
 
+REQUIRED_ARCH_KEYS = {
+    "cnn_full_v7": ("architecture", "planes", "channels", "res_blocks", "policy_channels"),
+    "cnn_factored": ("architecture", "planes", "channels", "res_blocks", "policy_channels"),
+    "cnn_factored_v5": ("architecture", "planes", "channels", "res_blocks", "policy_channels"),
+    "cnn": ("architecture", "planes", "channels", "res_blocks"),
+}
+
+
+def resolve_architecture(checkpoint: dict) -> dict:
+    """Read the architecture from checkpoint metadata; never fall back to a guessed shape."""
+    architecture = checkpoint.get("architecture")
+    if architecture not in REQUIRED_ARCH_KEYS:
+        raise ValueError(
+            f"checkpoint has no supported 'architecture' field (got {architecture!r}); "
+            f"expected one of {sorted(REQUIRED_ARCH_KEYS)}")
+    required = REQUIRED_ARCH_KEYS[architecture]
+    missing = [key for key in required if key not in checkpoint]
+    if missing:
+        raise ValueError(
+            f"checkpoint is missing architecture metadata {missing} for '{architecture}'; "
+            f"re-save it with the current trainer — guessing defaults builds a mismatched model")
+    return {key: checkpoint[key] for key in required}
+
+
 def export(args: argparse.Namespace) -> None:
     checkpoint_path = Path(args.input)
     output_path = Path(args.output)
@@ -180,27 +204,31 @@ def export(args: argparse.Namespace) -> None:
     print(f"Loading checkpoint: {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
-    channels = checkpoint.get("channels", 128)
-    res_blocks = checkpoint.get("res_blocks", 8)
+    try:
+        arch = resolve_architecture(checkpoint)
+    except ValueError as exc:
+        raise SystemExit(f"ERROR: {exc}")
+
+    architecture = arch["architecture"]
+    model_planes = arch["planes"]
+    channels = arch["channels"]
+    res_blocks = arch["res_blocks"]
     policy_dropout = checkpoint.get("policy_dropout", 0.3)
     value_dropout = checkpoint.get("value_dropout", 0.3)
-    architecture = checkpoint.get("architecture", "cnn")
 
-    # V5 models have 16 input planes; older models have 14
-    model_planes = checkpoint.get("planes", BOARD_PLANES)
     is_factored = architecture in ("cnn_factored", "cnn_factored_v5")
     is_full_v7 = architecture in ("cnn_full_v7",)
 
     print(f"  Architecture: {architecture}, channels={channels}, res_blocks={res_blocks}, input_planes={model_planes}")
 
     if is_full_v7:
-        policy_channels = checkpoint.get("policy_channels", 8)
+        policy_channels = arch["policy_channels"]
         model = CNNFullPolicyValueNet(
             in_channels=model_planes, channels=channels, res_blocks=res_blocks,
             policy_dropout=policy_dropout, value_dropout=value_dropout,
             policy_channels=policy_channels)
     elif is_factored:
-        policy_channels = checkpoint.get("policy_channels", 2)
+        policy_channels = arch["policy_channels"]
         model = CNNFactoredPolicyValueNet(
             in_channels=model_planes, channels=channels, res_blocks=res_blocks,
             policy_dropout=policy_dropout, value_dropout=value_dropout,
