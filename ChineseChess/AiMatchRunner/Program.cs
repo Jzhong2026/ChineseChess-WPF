@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using ChineseChess.Ai;
+using ChineseChess.Ai.Neural;
 using ChineseChess.AiMatchRunner;
 using ChineseChess.Encoding;
 using ChineseChess.Models;
@@ -36,7 +38,7 @@ Console.WriteLine();
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 var engine = new XiangqiEngine();
-var classicAi = new XiangqiAiService(engine);
+IAiEngine classicAi = new XiangqiAiService(engine);
 
 if (!File.Exists(onnxModelPath))
 {
@@ -46,9 +48,9 @@ if (!File.Exists(onnxModelPath))
 }
 
 Console.Write("正在加载 ONNX 模型... ");
-var neuralAi = new XiangqiNeuralAiService(onnxModelPath, engine, isCnnModel: true);
-MctsAiService? mctsAi = useMcts ? new MctsAiService(neuralAi, engine) : null;
-Console.WriteLine($"✅ ({(neuralAi.IsFactoredModel ? "Factored" : "Flat")}, {(neuralAi.IsV5Model ? "V5/16平面" : "Legacy/14平面")})");
+IAiEngine onnxAi = AiEngineFactory.Create(
+    useMcts ? AiEngineKind.NeuralMcts : AiEngineKind.NeuralPolicy, engine, onnxModelPath, mctsSimulations);
+Console.WriteLine($"✅ ({onnxAi.Name})");
 Console.WriteLine();
 
 // ─── Main game loop ──────────────────────────────────────────────────────────
@@ -78,32 +80,27 @@ for (int gameIdx = 0; gameIdx < gamesToPlay; gameIdx++)
         Move? chosenMove;
         var turnStart = Stopwatch.StartNew();
 
-        if (state.Turn == onnxSide)
+        var isOnnxTurn = state.Turn == onnxSide;
+        IAiEngine actor = isOnnxTurn ? onnxAi : classicAi;
+        var result = actor.ChooseMove(new AiMoveRequest(
+            state.Board, state.Turn, state.History,
+            isOnnxTurn ? mctsTimeLimitMs : hardAiTimeMs,
+            Difficulty: hardAiLevel,
+            Temperature: isOnnxTurn && useMcts ? 0.05f : 0f));
+        chosenMove = result.Move;
+
+        if (isOnnxTurn)
         {
-            // ── MCTS+NN side ──
-            if (mctsAi is not null)
+            mctsStats.Add((result.Stats.Sims, turnStart.Elapsed.TotalMilliseconds, (float)result.Stats.Q));
+            if (verbosePerMove)
             {
-                var result = mctsAi.Search(state.Board, state.Turn, state.History,
-                    simulations: mctsSimulations, temperature: 0.05f, timeLimitMs: mctsTimeLimitMs);
-                chosenMove = result.BestMove;
-                mctsStats.Add((result.SimulationsRun, turnStart.Elapsed.TotalMilliseconds, result.BestQ));
-                if (verbosePerMove)
-                {
-                    Console.WriteLine($"    [MCTS 步 {moveCount}] sims={result.SimulationsRun} time={turnStart.Elapsed.TotalMilliseconds:F0}ms Q={result.BestQ:F3}");
-                    foreach (var s in result.MoveStats.OrderByDescending(s => s.Visits).Take(3))
-                        Console.WriteLine($"        → {s.Move.From.Row},{s.Move.From.Col}->{s.Move.To.Row},{s.Move.To.Col} visits={s.Visits} Q={s.Q:F3}");
-                }
-            }
-            else
-            {
-                chosenMove = neuralAi.ChooseMoveByPolicy(state.Board, state.Turn, state.History);
+                Console.WriteLine($"    [MCTS 步 {moveCount}] sims={result.Stats.Sims} time={turnStart.Elapsed.TotalMilliseconds:F0}ms Q={result.Stats.Q:F3}");
+                foreach (var s in (result.MoveStats ?? Array.Empty<(Move, int, float)>()).OrderByDescending(s => s.Visits).Take(3))
+                    Console.WriteLine($"        → {s.Move.From.Row},{s.Move.From.Col}->{s.Move.To.Row},{s.Move.To.Col} visits={s.Visits} Q={s.Q:F3}");
             }
         }
         else
         {
-            // ── Classic AI side ──
-            var result = classicAi.ChooseMove(state.Board, state.Turn, hardAiLevel, state.History, hardAiTimeMs);
-            chosenMove = result.Move;
             var s = result.Stats;
             classicStats.Add((s.DepthReached, s.Nodes, turnStart.Elapsed.TotalMilliseconds, s.TtHits, s.TtStores, s.TtBestMoveHits));
             if (verbosePerMove)

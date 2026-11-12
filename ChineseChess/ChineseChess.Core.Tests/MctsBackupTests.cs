@@ -1,4 +1,5 @@
-using ChineseChess.Models;
+﻿using ChineseChess.Models;
+using ChineseChess.Ai.Neural;
 using ChineseChess.Services;
 using Xunit;
 

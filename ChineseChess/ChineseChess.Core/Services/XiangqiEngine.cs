@@ -1,3 +1,4 @@
+﻿using ChineseChess.Geometry;
 using ChineseChess.Models;
 
 namespace ChineseChess.Services;
@@ -172,99 +173,9 @@ public sealed class XiangqiEngine
     {
         var general = FindGeneral(board, side);
         if (general is null) return true;
-        return IsSquareAttacked(board, general.Value, Opposite(side));
+        return XiangqiGeometry.IsSquareAttacked(board, general.Value, Opposite(side));
     }
 
-    private static readonly (int dr, int dc)[] OrthogonalDirections = { (-1, 0), (1, 0), (0, -1), (0, 1) };
-
-    // Offsets from the TARGET square to an attacking horse, and to that horse's leg.
-    private static readonly (int dr, int dc, int lr, int lc)[] HorseAttackOffsets =
-    {
-        (-2, -1, -1, -1), (-2, 1, -1, 1),
-        (2, -1, 1, -1), (2, 1, 1, 1),
-        (-1, -2, -1, -1), (1, -2, 1, -1),
-        (-1, 2, -1, 1), (1, 2, 1, 1),
-    };
-
-    /// <summary>
-    /// Allocation-free attack scan on a general's square. Advisors and elephants
-    /// are skipped: neither can leave its own palace/half, so neither can ever
-    /// attack the enemy general.
-    /// </summary>
-    private bool IsSquareAttacked(Piece?[,] board, Position target, Side attacker)
-    {
-        var tr = target.Row;
-        var tc = target.Col;
-
-        foreach (var (dr, dc) in OrthogonalDirections)
-        {
-            var r = tr + dr;
-            var c = tc + dc;
-            var distance = 1;
-            var screens = 0;
-            while (r >= 0 && r < BoardRows && c >= 0 && c < BoardCols)
-            {
-                var piece = board[r, c];
-                if (piece is not null)
-                {
-                    if (piece.Side == attacker)
-                    {
-                        if (screens == 0)
-                        {
-                            if (piece.Type == PieceType.Rook) return true;
-                            // Generals attack along an open file at any distance (flying
-                            // general) and orthogonally at distance 1.
-                            if (piece.Type == PieceType.General && (dc == 0 || distance == 1)) return true;
-                        }
-                        else if (piece.Type == PieceType.Cannon)
-                        {
-                            return true;
-                        }
-                        else
-                        {
-                            break;
-                        }
-                    }
-                    screens++;
-                    if (screens >= 2) break;
-                }
-                r += dr;
-                c += dc;
-                distance++;
-            }
-        }
-
-        foreach (var (dr, dc, lr, lc) in HorseAttackOffsets)
-        {
-            var hr = tr + dr;
-            var hc = tc + dc;
-            if (hr < 0 || hr >= BoardRows || hc < 0 || hc >= BoardCols) continue;
-            var piece = board[hr, hc];
-            if (piece is null || piece.Side != attacker || piece.Type != PieceType.Horse) continue;
-            var legR = tr + lr;
-            var legC = tc + lc;
-            if (board[legR, legC] is null) return true;
-        }
-
-        var forward = attacker == Side.Red ? -1 : 1;
-        var soldierRow = tr - forward;
-        if (soldierRow >= 0 && soldierRow < BoardRows)
-        {
-            var piece = board[soldierRow, tc];
-            if (piece is not null && piece.Side == attacker && piece.Type == PieceType.Soldier) return true;
-        }
-        for (var dc = -1; dc <= 1; dc += 2)
-        {
-            var c = tc + dc;
-            if (c < 0 || c >= BoardCols) continue;
-            var piece = board[tr, c];
-            if (piece is null || piece.Side != attacker || piece.Type != PieceType.Soldier) continue;
-            var crossed = attacker == Side.Red ? tr <= 4 : tr >= 5;
-            if (crossed) return true;
-        }
-
-        return false;
-    }
 
     public Position? FindGeneral(Piece?[,] board, Side side)
     {

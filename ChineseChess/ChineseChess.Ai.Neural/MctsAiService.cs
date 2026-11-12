@@ -1,9 +1,10 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using ChineseChess.Encoding;
 using ChineseChess.Models;
+using ChineseChess.Services;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
-namespace ChineseChess.Services;
+namespace ChineseChess.Ai.Neural;
 
 /// <summary>
 /// Monte Carlo Tree Search (MCTS) combined with a neural network policy-value network.

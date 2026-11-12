@@ -1,5 +1,6 @@
-using ChineseChess.Encoding;
+﻿using ChineseChess.Encoding;
 using ChineseChess.Models;
+using ChineseChess.Ai.Neural;
 using ChineseChess.Services;
 
 internal static class Program

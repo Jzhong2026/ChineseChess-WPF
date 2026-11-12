@@ -1,6 +1,7 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ChineseChess.Ai;
 using ChineseChess.Encoding;
 using ChineseChess.Models;
 using ChineseChess.Services;
@@ -19,7 +20,7 @@ var jsonOptions = new JsonSerializerOptions
 };
 
 var engine = new XiangqiEngine();
-var ai = new XiangqiAiService(engine);
+IAiEngine ai = new XiangqiAiService(engine);
 var redWins = 0;
 var blackWins = 0;
 var draws = 0;
@@ -55,7 +56,7 @@ try
             if (legalMoves.Count == 0) break;
 
             var selectionOptions = BuildMoveSelectionOptions(options, moveIndex);
-            var result = ai.ChooseMove(state.Board, state.Turn, options.Level, state.History, options.TimeMs, selectionOptions);
+            var result = ai.ChooseMove(new AiMoveRequest(state.Board, state.Turn, state.History, options.TimeMs, selectionOptions, Difficulty: options.Level));
             if (result.Move is null) break;
 
             var selectedMove = MoveEncoder.Encode(result.Move);

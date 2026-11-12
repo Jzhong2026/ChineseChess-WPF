@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using ChineseChess.Models;
+using ChineseChess.Search;
 using ChineseChess.Services;
 using Xunit;
 
@@ -38,12 +39,10 @@ public class QuiescenceCheckTests
 
     private static double Q(Piece?[,] board, Side side)
     {
-        var ai = new XiangqiAiService(Engine);
-        var nodes = 0;
-        var aborted = false;
-        return ai.Quiescence(board, side, double.NegativeInfinity, double.PositiveInfinity,
-            side, side, Array.Empty<Move>(), Stopwatch.StartNew(), long.MaxValue,
-            ref nodes, ref aborted, depthFromRoot: 0, qDepth: 0);
+        var search = new AlphaBetaSearch(Engine);
+        var state = new SearchState(Stopwatch.StartNew(), long.MaxValue);
+        return search.Quiescence(board, side, double.NegativeInfinity, double.PositiveInfinity,
+            side, side, Array.Empty<Move>(), state, depthFromRoot: 0, qDepth: 0);
     }
 
     [Fact]

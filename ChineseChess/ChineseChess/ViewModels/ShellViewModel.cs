@@ -1,6 +1,8 @@
 using System.IO;
 using System.Windows;
 using Caliburn.Micro;
+using ChineseChess.Ai;
+using ChineseChess.Ai.Neural;
 using ChineseChess.Messages;
 using ChineseChess.Models;
 using ChineseChess.Services;
@@ -21,8 +23,7 @@ public sealed class ShellViewModel :
     private readonly XiangqiEngine _engine;
     private readonly XiangqiAiService _ai;
     private readonly SoundService _sound;
-    private XiangqiNeuralAiService? _neuralAi;
-    private MctsAiService? _mctsAi;
+    private IAiEngine? _neuralEngine;
     private GameState _state;
     private Position? _selected;
     private IReadOnlyList<Move> _legalMoves = Array.Empty<Move>();
@@ -122,11 +123,18 @@ public sealed class ShellViewModel :
     public async Task HandleAsync(AiEngineModeChangedMessage message, CancellationToken cancellationToken)
     {
         SidePanel.AiEngineMode = message.Mode;
+        DisposeNeuralEngine();
         if (message.Mode != AiEngineMode.Classic)
         {
             await TryInitNeuralAiAsync();
         }
         await ResetGame();
+    }
+
+    protected override async Task OnDeactivateAsync(bool close, CancellationToken cancellationToken)
+    {
+        DisposeNeuralEngine();
+        await base.OnDeactivateAsync(close, cancellationToken);
     }
 
     public async Task HandleAsync(UndoRequestedMessage message, CancellationToken cancellationToken)
@@ -160,7 +168,8 @@ public sealed class ShellViewModel :
 
     private async Task TryInitNeuralAiAsync()
     {
-        if (_neuralAi is not null) return;
+        var kind = ToEngineKind(SidePanel.AiEngineMode);
+        if (kind == AiEngineKind.Classic) return;
         var modelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, OnnxModelPath);
         if (!File.Exists(modelPath))
         {
@@ -174,15 +183,27 @@ public sealed class ShellViewModel :
             // InferenceSession construction does native model loading and would
             // freeze the UI if it ran on the dispatcher thread.
             var engine = _engine;
-            var neural = await Task.Run(() => new XiangqiNeuralAiService(modelPath, engine, isCnnModel: true));
-            _neuralAi = neural;
-            _mctsAi = new MctsAiService(neural, engine);
+            var simulations = SidePanel.MctsSimulations;
+            _neuralEngine = await Task.Run(() => AiEngineFactory.Create(kind, engine, modelPath, simulations));
             SidePanel.NeuralAiInfo = "神经网络已加载";
         }
         catch (Exception ex)
         {
             SidePanel.NeuralAiInfo = $"⚠ 加载失败: {ex.Message}";
         }
+    }
+
+    private static AiEngineKind ToEngineKind(AiEngineMode mode) => mode switch
+    {
+        AiEngineMode.Neural => AiEngineKind.NeuralPolicy,
+        AiEngineMode.NeuralMcts => AiEngineKind.NeuralMcts,
+        _ => AiEngineKind.Classic,
+    };
+
+    private void DisposeNeuralEngine()
+    {
+        (_neuralEngine as IDisposable)?.Dispose();
+        _neuralEngine = null;
     }
 
     private async Task ResetGame()
@@ -278,30 +299,23 @@ public sealed class ShellViewModel :
     /// <summary>Runs on a worker thread; returns results so the UI thread applies them.</summary>
     private AiTurnOutcome RunAiSearch(GameState snapshot)
     {
-        if (SidePanel.AiEngineMode == AiEngineMode.Neural && _neuralAi is not null)
-        {
-            var move = _neuralAi.ChooseMoveByPolicy(snapshot.Board, snapshot.Turn, snapshot.History);
-            var value = _neuralAi.EvaluatePosition(snapshot.Board, snapshot.Turn);
-            return new AiTurnOutcome(move, null, $"NN Policy | Value: {value:+0.00;-0.00;0.00}");
-        }
+        var mode = SidePanel.AiEngineMode;
+        // Depend on the abstraction: any IAiEngine works here, no per-engine branch.
+        IAiEngine engine = mode == AiEngineMode.Classic || _neuralEngine is null ? _ai : _neuralEngine;
+        var request = new AiMoveRequest(snapshot.Board, snapshot.Turn, snapshot.History,
+            SidePanel.AiTimeLimitMs, Difficulty: SidePanel.AiLevel);
+        var result = engine.ChooseMove(request);
 
-        if (SidePanel.AiEngineMode == AiEngineMode.NeuralMcts && _mctsAi is not null)
+        string? info = mode switch
         {
-            var mcts = _mctsAi.Search(
-                snapshot.Board, snapshot.Turn, snapshot.History,
-                simulations: SidePanel.MctsSimulations,
-                temperature: 0f,
-                timeLimitMs: SidePanel.AiTimeLimitMs);
-            return new AiTurnOutcome(mcts.BestMove, null, $"MCTS {mcts.SimulationsRun} sims | Q: {mcts.BestQ:+0.00;-0.00;0.00}");
-        }
-
-        var classic = _ai.ChooseMove(snapshot.Board, snapshot.Turn, SidePanel.AiLevel, snapshot.History, SidePanel.AiTimeLimitMs);
-        // A neural mode was requested but is unavailable: keep the reason visible
-        // rather than clearing it, so the UI does not silently look like NN play.
-        var fallback = SidePanel.AiEngineMode == AiEngineMode.Classic
-            ? null
-            : "⚠ 神经网络不可用，已回退传统搜索";
-        return new AiTurnOutcome(classic.Move, classic.Stats, fallback);
+            AiEngineMode.Neural when _neuralEngine is not null => $"NN Policy | Value: {result.Stats.Q:+0.00;-0.00;0.00}",
+            AiEngineMode.NeuralMcts when _neuralEngine is not null => $"MCTS {result.Stats.Sims} sims | Q: {result.Stats.Q:+0.00;-0.00;0.00}",
+            AiEngineMode.Classic => null,
+            // A neural mode was requested but is unavailable: keep the reason visible.
+            _ => "⚠ 神经网络不可用，已回退传统搜索",
+        };
+        var stats = mode == AiEngineMode.Classic ? result.Stats : null;
+        return new AiTurnOutcome(result.Move, stats, info);
     }
 
     private string GameOverText() => _state.Status switch

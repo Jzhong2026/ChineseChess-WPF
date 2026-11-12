@@ -1,3 +1,4 @@
+﻿using ChineseChess.Geometry;
 using ChineseChess.Models;
 using ChineseChess.Services;
 using Xunit;
@@ -38,7 +39,7 @@ public class EvaluationGeometryTests
             var actual = new List<(int, int)>();
             for (var r = 0; r < 10; r++)
                 for (var c = 0; c < 9; c++)
-                    if (XiangqiAiService.IsElephantSlot(side, r, c)) actual.Add((r, c));
+                    if (XiangqiGeometry.IsElephantSlot(side, r, c)) actual.Add((r, c));
 
             Assert.Equal(expected.OrderBy(x => x).ToList(), actual.OrderBy(x => x).ToList());
         }
@@ -53,7 +54,7 @@ public class EvaluationGeometryTests
             var actual = new List<(int, int)>();
             for (var r = 0; r < 10; r++)
                 for (var c = 0; c < 9; c++)
-                    if (XiangqiAiService.IsAdvisorSlot(side, r, c)) actual.Add((r, c));
+                    if (XiangqiGeometry.IsAdvisorSlot(side, r, c)) actual.Add((r, c));
 
             Assert.Equal(expected.OrderBy(x => x).ToList(), actual.OrderBy(x => x).ToList());
         }
@@ -62,10 +63,10 @@ public class EvaluationGeometryTests
     [Fact]
     public void CentralElephantAndAdvisorSquaresCountAsInPlace()
     {
-        Assert.True(XiangqiAiService.IsElephantSlot(Side.Red, 7, 4));
-        Assert.True(XiangqiAiService.IsElephantSlot(Side.Black, 2, 4));
-        Assert.True(XiangqiAiService.IsAdvisorSlot(Side.Red, 8, 4));
-        Assert.True(XiangqiAiService.IsAdvisorSlot(Side.Black, 1, 4));
+        Assert.True(XiangqiGeometry.IsElephantSlot(Side.Red, 7, 4));
+        Assert.True(XiangqiGeometry.IsElephantSlot(Side.Black, 2, 4));
+        Assert.True(XiangqiGeometry.IsAdvisorSlot(Side.Red, 8, 4));
+        Assert.True(XiangqiGeometry.IsAdvisorSlot(Side.Black, 1, 4));
     }
 
     [Fact]
@@ -75,15 +76,15 @@ public class EvaluationGeometryTests
         var horse = new Piece("red-horse-0", Side.Red, PieceType.Horse);
         board[5, 4] = horse;
         // From (5,4) all eight jumps are on-board and all legs are empty.
-        Assert.Equal(8, XiangqiAiService.CountHorseMoves(board, 5, 4, horse));
+        Assert.Equal(8, XiangqiGeometry.CountHorseMoves(board, 5, 4, horse));
 
         // Block one landing square with a OWN piece: mobility must drop to 7.
         board[3, 3] = new Piece("red-soldier-0", Side.Red, PieceType.Soldier);
-        Assert.Equal(7, XiangqiAiService.CountHorseMoves(board, 5, 4, horse));
+        Assert.Equal(7, XiangqiGeometry.CountHorseMoves(board, 5, 4, horse));
 
         // An ENEMY piece on a landing square is a capture and still counts.
         board[3, 3] = new Piece("black-soldier-0", Side.Black, PieceType.Soldier);
-        Assert.Equal(8, XiangqiAiService.CountHorseMoves(board, 5, 4, horse));
+        Assert.Equal(8, XiangqiGeometry.CountHorseMoves(board, 5, 4, horse));
     }
 
     [Fact]
@@ -94,6 +95,6 @@ public class EvaluationGeometryTests
         board[5, 4] = horse;
         // Leg (4,4) blocks BOTH (3,3) and (3,5).
         board[4, 4] = new Piece("red-soldier-0", Side.Red, PieceType.Soldier);
-        Assert.Equal(6, XiangqiAiService.CountHorseMoves(board, 5, 4, horse));
+        Assert.Equal(6, XiangqiGeometry.CountHorseMoves(board, 5, 4, horse));
     }
 }
