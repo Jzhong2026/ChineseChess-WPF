@@ -1,0 +1,36 @@
+"""Shared, torch-free building blocks for the Chinese Chess training scripts."""
+from .encoding import (
+    ACTION_DIM,
+    BLACK_TO_MOVE_PLANE,
+    BOARD_COLS,
+    BOARD_ROWS,
+    BOARD_SIZE,
+    FLAT_DIM,
+    INPUT_PLANES,
+    PIECE_PLANES,
+    RED_TO_MOVE_PLANE,
+    SIDE_PLANES,
+    encode_board,
+    flip_features,
+    flip_square,
+    remap_legal_moves,
+    remap_move,
+)
+
+__all__ = [
+    "ACTION_DIM",
+    "BLACK_TO_MOVE_PLANE",
+    "BOARD_COLS",
+    "BOARD_ROWS",
+    "BOARD_SIZE",
+    "FLAT_DIM",
+    "INPUT_PLANES",
+    "PIECE_PLANES",
+    "RED_TO_MOVE_PLANE",
+    "SIDE_PLANES",
+    "encode_board",
+    "flip_features",
+    "flip_square",
+    "remap_legal_moves",
+    "remap_move",
+]

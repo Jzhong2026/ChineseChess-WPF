@@ -25,15 +25,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
+from chesslib.encoding import (
+    ACTION_DIM,
+    BOARD_SIZE,
+    INPUT_PLANES,
+    encode_board,
+    flip_features,
+    remap_legal_moves,
+    remap_move,
+)
+from chesslib.encoding import FLAT_DIM as INPUT_DIM, PIECE_PLANES as BOARD_PLANES
+
 # ─── Constants ─────────────────────────────────────────────────────────
-BOARD_PLANES = 14
-SIDE_PLANES = 2
-INPUT_PLANES = BOARD_PLANES + SIDE_PLANES  # 16
-BOARD_ROWS = 10
-BOARD_COLS = 9
-BOARD_SIZE = BOARD_ROWS * BOARD_COLS  # 90
-INPUT_DIM = BOARD_PLANES * BOARD_ROWS * BOARD_COLS  # 1260
-ACTION_DIM = BOARD_SIZE * BOARD_SIZE  # 8100
 INVALID_LOGIT = -1e9
 CHUNK_SIZE = 5000
 
@@ -103,32 +106,8 @@ class CNNFullPolicyValueNet(nn.Module):
 
 # ─── Chunked Dataset ──────────────────────────────────────────────────
 
-def _encode_features(board_encoding, side_to_move):
-    """Convert raw board encoding + side to [16, 10, 9] feature tensor."""
-    flat = torch.tensor(board_encoding, dtype=torch.float32)
-    board_features = flat.view(BOARD_SIZE, BOARD_PLANES).permute(1, 0).view(BOARD_PLANES, BOARD_ROWS, BOARD_COLS)
-    side_planes = torch.zeros(SIDE_PLANES, BOARD_ROWS, BOARD_COLS, dtype=torch.float32)
-    if side_to_move == 1:
-        side_planes[0] = 1.0
-    else:
-        side_planes[1] = 1.0
-    return torch.cat([board_features, side_planes], dim=0)
-
-
 def _remap_legal_moves(legal_moves, flip_columns=False):
-    """Remap legal moves for horizontal flip augmentation."""
-    if not flip_columns:
-        return legal_moves
-    new_indices = []
-    for move_idx in legal_moves:
-        f_idx = move_idx // BOARD_SIZE
-        t_idx = move_idx % BOARD_SIZE
-        f_r, f_c = f_idx // BOARD_COLS, f_idx % BOARD_COLS
-        t_r, t_c = t_idx // BOARD_COLS, t_idx % BOARD_COLS
-        f_c = BOARD_COLS - 1 - f_c
-        t_c = BOARD_COLS - 1 - t_c
-        new_indices.append((f_r * BOARD_COLS + f_c) * BOARD_SIZE + (t_r * BOARD_COLS + t_c))
-    return new_indices
+    return remap_legal_moves(legal_moves) if flip_columns else legal_moves
 
 
 def _input_fingerprint(jsonl_path):
@@ -188,7 +167,7 @@ def preprocess_jsonl(jsonl_path: str, chunk_dir: str):
                 continue
 
             # Encode features
-            features = _encode_features(board_encoding, side_to_move)
+            features = torch.from_numpy(encode_board(board_encoding, side_to_move))
             move_target = torch.tensor(selected_move, dtype=torch.long)
             value_target = torch.tensor(result * side_to_move, dtype=torch.float32)
             legal_tensor = torch.tensor(legal_moves, dtype=torch.long)
@@ -285,14 +264,8 @@ class ChunkedDataset(Dataset):
         pw = torch.as_tensor(self._pw[idx], dtype=torch.float32)
 
         if random.random() < 0.5:
-            features = features.flip(-1)
-            from_idx = move.item() // BOARD_SIZE
-            to_idx = move.item() % BOARD_SIZE
-            f_r, f_c = from_idx // BOARD_COLS, from_idx % BOARD_COLS
-            t_r, t_c = to_idx // BOARD_COLS, to_idx % BOARD_COLS
-            f_c = BOARD_COLS - 1 - f_c
-            t_c = BOARD_COLS - 1 - t_c
-            move = torch.tensor((f_r * BOARD_COLS + f_c) * BOARD_SIZE + (t_r * BOARD_COLS + t_c), dtype=torch.long)
+            features = flip_features(features)
+            move = torch.tensor(remap_move(move.item()), dtype=torch.long)
             legal = _remap_legal_moves(legal.tolist(), flip_columns=True)
 
         legal_mask = torch.zeros(ACTION_DIM, dtype=torch.bool)

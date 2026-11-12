@@ -14,8 +14,9 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
-INPUT_DIM = 1260
-ACTION_DIM = 8100
+from chesslib.encoding import ACTION_DIM
+from chesslib.encoding import FLAT_DIM as INPUT_DIM
+
 INVALID_LOGIT = -1e9
 
 

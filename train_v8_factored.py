@@ -35,14 +35,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-# ─── Constants ────────────────────────────────────────────────────
-BOARD_PLANES = 14
-SIDE_PLANES = 2
-INPUT_PLANES = BOARD_PLANES + SIDE_PLANES  # 16
-BOARD_ROWS = 10
-BOARD_COLS = 9
-BOARD_SIZE = BOARD_ROWS * BOARD_COLS  # 90
-ACTION_DIM = BOARD_SIZE * BOARD_SIZE  # 8100
+from chesslib.encoding import (
+    ACTION_DIM,
+    BOARD_SIZE,
+    INPUT_PLANES,
+    encode_board,
+    flip_features,
+    flip_square,
+    remap_legal_moves,
+)
+from chesslib.encoding import PIECE_PLANES as BOARD_PLANES
+
 INVALID_LOGIT = -1e9
 
 
@@ -69,16 +72,7 @@ class ChineseChessDataset(Dataset):
 
     def __getitem__(self, idx):
         s = self.samples[idx]
-        flat = torch.tensor(s.board_encoding, dtype=torch.float32)
-        board_features = flat.view(BOARD_SIZE, BOARD_PLANES).permute(1, 0).view(
-            BOARD_PLANES, BOARD_ROWS, BOARD_COLS)
-
-        side_planes = torch.zeros(SIDE_PLANES, BOARD_ROWS, BOARD_COLS, dtype=torch.float32)
-        if s.side_to_move == 1:
-            side_planes[0] = 1.0
-        else:
-            side_planes[1] = 1.0
-        features = torch.cat([board_features, side_planes], dim=0)  # [16, 10, 9]
+        features = torch.from_numpy(encode_board(s.board_encoding, s.side_to_move))
 
         from_idx = s.selected_move // BOARD_SIZE
         to_idx = s.selected_move % BOARD_SIZE
@@ -93,25 +87,11 @@ class ChineseChessDataset(Dataset):
 
         # Data augmentation: horizontal flip
         if random.random() < self.aug_prob:
-            features = features.flip(-1)
-            f_r, f_c = from_idx // BOARD_COLS, from_idx % BOARD_COLS
-            t_r, t_c = to_idx // BOARD_COLS, to_idx % BOARD_COLS
-            f_c = BOARD_COLS - 1 - f_c
-            t_c = BOARD_COLS - 1 - t_c
-            from_target = torch.tensor(f_r * BOARD_COLS + f_c, dtype=torch.long)
-            to_target = torch.tensor(t_r * BOARD_COLS + t_c, dtype=torch.long)
-            # Remap legal_mask
-            new_legal = []
-            for move_idx in s.legal_moves:
-                mf = move_idx // BOARD_SIZE
-                mt = move_idx % BOARD_SIZE
-                mfr, mfc = mf // BOARD_COLS, mf % BOARD_COLS
-                mtr, mtc = mt // BOARD_COLS, mt % BOARD_COLS
-                mfc = BOARD_COLS - 1 - mfc
-                mtc = BOARD_COLS - 1 - mtc
-                new_legal.append((mfr * BOARD_COLS + mfc) * BOARD_SIZE + (mtr * BOARD_COLS + mtc))
+            features = flip_features(features)
+            from_target = torch.tensor(flip_square(from_idx), dtype=torch.long)
+            to_target = torch.tensor(flip_square(to_idx), dtype=torch.long)
             legal_mask = torch.zeros(ACTION_DIM, dtype=torch.bool)
-            legal_mask[new_legal] = True
+            legal_mask[remap_legal_moves(s.legal_moves)] = True
 
         return features, from_target, to_target, value_target, legal_mask, value_weight, policy_weight
 

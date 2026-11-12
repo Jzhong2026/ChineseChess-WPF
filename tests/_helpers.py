@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import itertools
 import json
 import sys
 import types
@@ -70,6 +71,17 @@ def _import_nodes(tree: ast.Module, ns: dict) -> list:
     return []
 
 
+_synthetic_counter = itertools.count()
+
+
+def _synthetic_module(rel_path: str) -> dict:
+    # @dataclass resolves string annotations through sys.modules[cls.__module__] (PEP 649).
+    name = f"extracted_{Path(rel_path).stem}_{next(_synthetic_counter)}"
+    module = types.ModuleType(name)
+    sys.modules[name] = module
+    return module.__dict__
+
+
 def extract_symbols(rel_path: str, names, extra_ns=None) -> dict:
     """exec only the requested top-level functions/classes plus literals and stdlib imports.
 
@@ -77,7 +89,7 @@ def extract_symbols(rel_path: str, names, extra_ns=None) -> dict:
     """
     tree = tree_of(rel_path)
     wanted = set(names)
-    ns = {"__name__": f"extracted_{Path(rel_path).stem}"}
+    ns = _synthetic_module(rel_path)
     body = _import_nodes(tree, ns) + _const_assignments(tree, ns)
     found = set()
     for node in tree.body:
@@ -95,7 +107,7 @@ def extract_symbols(rel_path: str, names, extra_ns=None) -> dict:
 
 def extract_method(rel_path: str, class_name: str, method_name: str, extra_ns=None) -> dict:
     tree = tree_of(rel_path)
-    ns = {"__name__": f"extracted_{Path(rel_path).stem}"}
+    ns = _synthetic_module(rel_path)
     body = _import_nodes(tree, ns) + _const_assignments(tree, ns)
     target = None
     for node in tree.body:
@@ -172,6 +184,17 @@ class ShimTensor:
     def __index__(self):
         return int(self.array.item())
 
+    def view(self, *shape):
+        if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
+            shape = tuple(shape[0])
+        return ShimTensor(self.array.reshape(shape))
+
+    def reshape(self, *shape):
+        return self.view(*shape)
+
+    def permute(self, *dims):
+        return ShimTensor(np.transpose(self.array, axes=dims))
+
 
 def make_torch_shim():
     return types.SimpleNamespace(
@@ -180,7 +203,11 @@ def make_torch_shim():
         bool=np.bool_,
         tensor=lambda x, dtype=None: ShimTensor(np.asarray(x, dtype=dtype)),
         as_tensor=lambda x, dtype=None: ShimTensor(np.asarray(x, dtype=dtype)),
-        zeros=lambda n, dtype=None: ShimTensor(np.zeros(n, dtype=dtype)),
+        from_numpy=lambda a: ShimTensor(np.asarray(a)),
+        zeros=lambda *shape, dtype=None: ShimTensor(
+            np.zeros(shape[0] if len(shape) == 1 else shape, dtype=dtype)),
+        cat=lambda tensors, dim=0: ShimTensor(
+            np.concatenate([np.asarray(t) for t in tensors], axis=dim)),
     )
 
 

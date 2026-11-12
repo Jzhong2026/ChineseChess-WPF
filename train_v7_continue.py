@@ -24,15 +24,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
+from chesslib.encoding import (
+    ACTION_DIM,
+    BOARD_ROWS,
+    BOARD_SIZE,
+    INPUT_PLANES,
+    encode_board,
+    flip_features,
+    remap_legal_moves,
+    remap_move,
+)
+from chesslib.encoding import FLAT_DIM as INPUT_DIM, PIECE_PLANES as BOARD_PLANES
+
 # ─── Constants ─────────────────────────────────────────────────────────
-BOARD_PLANES = 14
-SIDE_PLANES = 2
-INPUT_PLANES = BOARD_PLANES + SIDE_PLANES  # 16
-BOARD_ROWS = 10
-BOARD_COLS = 9
-BOARD_SIZE = BOARD_ROWS * BOARD_COLS  # 90
-INPUT_DIM = BOARD_PLANES * BOARD_ROWS * BOARD_COLS  # 1260
-ACTION_DIM = BOARD_SIZE * BOARD_SIZE  # 8100
 INVALID_LOGIT = -1e9
 
 
@@ -56,30 +60,15 @@ class ChineseChessDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, ...]:
         s = self.samples[idx]
-        flat = torch.tensor(s.board_encoding, dtype=torch.float32)
-        board_features = flat.view(BOARD_SIZE, BOARD_PLANES).permute(1, 0).view(BOARD_PLANES, BOARD_ROWS, BOARD_COLS)
-
-        side_planes = torch.zeros(SIDE_PLANES, BOARD_ROWS, BOARD_COLS, dtype=torch.float32)
-        if s.side_to_move == 1:
-            side_planes[0] = 1.0
-        else:
-            side_planes[1] = 1.0
-
-        features = torch.cat([board_features, side_planes], dim=0)  # [16, 10, 9]
+        features = torch.from_numpy(encode_board(s.board_encoding, s.side_to_move))
 
         if random.random() < 0.5:
-            features = features.flip(-1)
-            from_idx = s.selected_move // BOARD_SIZE
-            to_idx = s.selected_move % BOARD_SIZE
-            f_r, f_c = from_idx // BOARD_COLS, from_idx % BOARD_COLS
-            t_r, t_c = to_idx // BOARD_COLS, to_idx % BOARD_COLS
-            f_c = BOARD_COLS - 1 - f_c
-            t_c = BOARD_COLS - 1 - t_c
+            features = flip_features(features)
             s = SelfPlaySample(
                 board_encoding=s.board_encoding,
                 side_to_move=s.side_to_move,
                 legal_moves=_remap_legal_moves(s.legal_moves),
-                selected_move=(f_r * BOARD_COLS + f_c) * BOARD_SIZE + (t_r * BOARD_COLS + t_c),
+                selected_move=remap_move(s.selected_move),
                 result=s.result,
                 value_weight=s.value_weight,
                 policy_weight=s.policy_weight,
@@ -95,16 +84,7 @@ class ChineseChessDataset(Dataset):
 
 
 def _remap_legal_moves(legal_moves: List[int]) -> List[int]:
-    new_indices = []
-    for move_idx in legal_moves:
-        f_idx = move_idx // BOARD_SIZE
-        t_idx = move_idx % BOARD_SIZE
-        f_r, f_c = f_idx // BOARD_COLS, f_idx % BOARD_COLS
-        t_r, t_c = t_idx // BOARD_COLS, t_idx % BOARD_COLS
-        f_c = BOARD_COLS - 1 - f_c
-        t_c = BOARD_COLS - 1 - t_c
-        new_indices.append((f_r * BOARD_COLS + f_c) * BOARD_SIZE + (t_r * BOARD_COLS + t_c))
-    return new_indices
+    return remap_legal_moves(legal_moves)
 
 
 class ResidualBlock(nn.Module):

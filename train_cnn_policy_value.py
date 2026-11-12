@@ -37,15 +37,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-# ─── Constants ────────────────────────────────────────────────────────────────
-BOARD_PLANES = 14       # 2 sides × 7 piece types (stored in JSONL)
-SIDE_PLANES = 2         # Red-to-move + Black-to-move indicator planes
-INPUT_PLANES = BOARD_PLANES + SIDE_PLANES  # 16 total input planes
-BOARD_ROWS = 10
-BOARD_COLS = 9
-BOARD_SIZE = BOARD_ROWS * BOARD_COLS  # 90
-INPUT_DIM = BOARD_PLANES * BOARD_ROWS * BOARD_COLS   # 1260 (JSONL encoding size)
-ACTION_DIM = BOARD_SIZE * BOARD_SIZE  # 8100
+from chesslib.encoding import (
+    ACTION_DIM,
+    BOARD_COLS,
+    BOARD_ROWS,
+    BOARD_SIZE,
+    INPUT_PLANES,
+    encode_board,
+    flip_features,
+    flip_square,
+    remap_legal_moves,
+)
+from chesslib.encoding import FLAT_DIM as INPUT_DIM, PIECE_PLANES as BOARD_PLANES
+
 INVALID_LOGIT = -1e9
 
 
@@ -71,22 +75,7 @@ class ChineseChessDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         s = self.samples[idx]
-        # C# BoardEncoder outputs square-major: flat[(row*9+col)*14 + plane]
-        # CNN expects plane-major:  [plane, row, col]
-        flat = torch.tensor(s.board_encoding, dtype=torch.float32)
-        # flat: [1260] → [90, 14] → permute → [14, 90] → [14, 10, 9]
-        board_features = flat.view(BOARD_SIZE, BOARD_PLANES).permute(1, 0).view(BOARD_PLANES, BOARD_ROWS, BOARD_COLS)
-
-        # Add side-to-move indicator planes (V5 fix: critical for policy quality)
-        # Plane 14: all 1s if Red to move, all 0s otherwise
-        # Plane 15: all 1s if Black to move, all 0s otherwise
-        side_planes = torch.zeros(SIDE_PLANES, BOARD_ROWS, BOARD_COLS, dtype=torch.float32)
-        if s.side_to_move == 1:    # Red
-            side_planes[0] = 1.0
-        else:                       # Black
-            side_planes[1] = 1.0
-
-        features = torch.cat([board_features, side_planes], dim=0)  # [16, 10, 9]
+        features = torch.from_numpy(encode_board(s.board_encoding, s.side_to_move))
 
         # Factored targets: decompose selected_move = from_idx * 90 + to_idx
         from_target = torch.tensor(s.selected_move // BOARD_SIZE, dtype=torch.long)
@@ -105,29 +94,12 @@ class ChineseChessDataset(Dataset):
         # Chinese chess board is left-right symmetric, so flipping is safe.
         # Flip: col → 8-col. This effectively doubles the training data.
         if random.random() < 0.5:
-            # Flip features along column dimension: [16, 10, 9] → [16, 10, 9]
-            features = features.flip(-1)
+            features = flip_features(features)
+            from_target = torch.tensor(flip_square(s.selected_move // BOARD_SIZE), dtype=torch.long)
+            to_target = torch.tensor(flip_square(s.selected_move % BOARD_SIZE), dtype=torch.long)
 
-            # Remap from_target and to_target (row unchanged, col → 8-col)
-            from_row, from_col = from_target.item() // BOARD_COLS, from_target.item() % BOARD_COLS
-            to_row, to_col = to_target.item() // BOARD_COLS, to_target.item() % BOARD_COLS
-            from_col = BOARD_COLS - 1 - from_col
-            to_col = BOARD_COLS - 1 - to_col
-            from_target = torch.tensor(from_row * BOARD_COLS + from_col, dtype=torch.long)
-            to_target = torch.tensor(to_row * BOARD_COLS + to_col, dtype=torch.long)
-
-            # Remap legal_mask: for each legal move idx, remap from/to cols
-            new_legal_indices = []
-            for move_idx in s.legal_moves:
-                f_idx = move_idx // BOARD_SIZE
-                t_idx = move_idx % BOARD_SIZE
-                f_r, f_c = f_idx // BOARD_COLS, f_idx % BOARD_COLS
-                t_r, t_c = t_idx // BOARD_COLS, t_idx % BOARD_COLS
-                f_c = BOARD_COLS - 1 - f_c
-                t_c = BOARD_COLS - 1 - t_c
-                new_legal_indices.append((f_r * BOARD_COLS + f_c) * BOARD_SIZE + (t_r * BOARD_COLS + t_c))
             legal_mask = torch.zeros(ACTION_DIM, dtype=torch.bool)
-            legal_mask[new_legal_indices] = True
+            legal_mask[remap_legal_moves(s.legal_moves)] = True
 
         return features, from_target, to_target, value_target, legal_mask, value_weight, policy_weight
 
@@ -184,8 +156,6 @@ class CNNFactoredPolicyValueNet(nn.Module):
 
         # Tower of residual blocks
         self.tower = nn.Sequential(*[ResidualBlock(channels) for _ in range(res_blocks)])
-
-        BOARD_SIZE = BOARD_ROWS * BOARD_COLS  # 90
 
         # Policy head — factored into from + to
         self.policy_conv = nn.Conv2d(channels, 2, kernel_size=1, bias=False)
