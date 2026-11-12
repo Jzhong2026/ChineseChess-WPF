@@ -2,30 +2,34 @@
 # This .gitignore file was automatically created by Microsoft(R) Visual Studio.
 ################################################################################
 
-/ChineseChess/.vs/ChineseChess/CopilotIndices/18.0.981.45449
 /ChineseChess/.vs
-/ChineseChess/ChineseChess/bin/Debug/net10.0-windows
-/ChineseChess/ChineseChess/obj
 *.user
+
+# Build output (all configurations / target frameworks)
+/ChineseChess/ChineseChess/bin
+/ChineseChess/ChineseChess/obj
+/ChineseChess/ChineseChess.Core/bin
 /ChineseChess/ChineseChess.Core/obj
-/ChineseChess/ChineseChess.Core/bin/Debug/net10.0
-/ChineseChess/ChineseChess.Core.Verification/bin/Debug/net10.0
+/ChineseChess/ChineseChess.Core.Verification/bin
 /ChineseChess/ChineseChess.Core.Verification/obj
-/ChineseChess/ChineseChess.SelfPlay/bin/Debug/net10.0
+/ChineseChess/ChineseChess.SelfPlay/bin
 /ChineseChess/ChineseChess.SelfPlay/obj
-/data/
-*.jsonl
+/ChineseChess/ChineseChess.Core.Tests/bin
+/ChineseChess/ChineseChess.Core.Tests/obj
+/ChineseChess/AiMatchRunner/bin
+/ChineseChess/AiMatchRunner/obj
+
+# Python
 __pycache__/
 *.pyc
-/ChineseChess/ChineseChess/bin
-/ChineseChess/ChineseChess.Core/bin
-/ChineseChess/ChineseChess.Core.Verification/bin
-/ChineseChess/ChineseChess.SelfPlay/bin
+
+# Data / logs
+/data/
+*.jsonl
+*.log
 Learning/demo9_local_rag/index.json
 Learning/demo9_local_rag/ai_config.json
-/ChineseChess/AiMatchRunner/obj
-/ChineseChess/AiMatchRunner/bin/Release/net8.0
-*.log
+
 # Exclude training checkpoint files (large binary)
 artifacts/*.pt
 artifacts/*.onnx.bak

@@ -12,9 +12,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Copy ONNX model to output directory -->
+    <!-- Copy ONNX model to output directory. Weights are fully inline in the
+         .onnx; there is no external .onnx.data to copy. -->
     <None Include="..\..\artifacts\cnn_policy_value.onnx" CopyToOutputDirectory="PreserveNewest" Link="cnn_policy_value.onnx" />
-    <None Include="..\..\artifacts\cnn_policy_value.onnx.data" CopyToOutputDirectory="PreserveNewest" Link="cnn_policy_value.onnx.data" />
   </ItemGroup>
 
 </Project>
