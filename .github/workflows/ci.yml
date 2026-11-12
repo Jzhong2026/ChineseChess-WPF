@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet:
+    name: .NET 8 build and test (WPF)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore ChineseChess/ChineseChess.sln
+
+      - name: Build
+        run: dotnet build ChineseChess/ChineseChess.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test ChineseChess/ChineseChess.sln -c Release --no-build
+
+  python:
+    name: Python encoding contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        # The suite is torch-free by design: trainers are exercised through a numpy shim.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy onnxruntime pytest
+
+      - name: Test
+        run: python -m pytest tests/ -q

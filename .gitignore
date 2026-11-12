@@ -16,6 +16,8 @@
 /ChineseChess/ChineseChess.SelfPlay/obj
 /ChineseChess/ChineseChess.Core.Tests/bin
 /ChineseChess/ChineseChess.Core.Tests/obj
+/ChineseChess/ChineseChess.Ai.Neural/bin
+/ChineseChess/ChineseChess.Ai.Neural/obj
 /ChineseChess/AiMatchRunner/bin
 /ChineseChess/AiMatchRunner/obj
 
