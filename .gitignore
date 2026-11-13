@@ -41,3 +41,10 @@ run_selfplay_*.sh
 run_post_selfplay_*.sh
 run_pipeline_*.sh
 launch_detached.py
+
+# Local diagnostics and WPF regression test output
+tmp/
+/ChineseChess/ChineseChess.Wpf.Tests/bin
+/ChineseChess/ChineseChess.Wpf.Tests/obj
+/ChineseChess/ChineseChess.TeacherData/bin
+/ChineseChess/ChineseChess.TeacherData/obj

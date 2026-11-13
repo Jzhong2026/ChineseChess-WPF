@@ -4,12 +4,29 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from tests._helpers import REPO_ROOT, source_of
 
 SCRIPT = "run_parallel_selfplay.sh"
+
+
+def _bash_executable():
+    # Windows' bare bash command can resolve to WSL, which cannot consume a
+    # Windows argv/path or PATH containing our native test stubs. Prefer Git Bash.
+    if os.name == "nt":
+        git = shutil.which("git")
+        if git:
+            candidate = Path(git).resolve().parent.parent / "bin" / "bash.exe"
+            if candidate.is_file():
+                return str(candidate)
+        return None
+    return shutil.which("bash")
+
+
+BASH = _bash_executable()
 
 DOTNET_STUB = """#!/bin/bash
 out=""
@@ -32,7 +49,8 @@ DOTNET_STUB_OK = DOTNET_STUB.replace("  11111|33333) exit 3;;\n", "")
 
 
 def _make_tree(tmp_path, stub):
-    shutil.copyfile(REPO_ROOT / SCRIPT, tmp_path / SCRIPT)
+    # A Windows checkout may use CRLF; Bash fixtures must use LF.
+    (tmp_path / SCRIPT).write_text(source_of(SCRIPT), encoding="utf-8", newline="\n")
     bindir = tmp_path / "ChineseChess" / "ChineseChess.SelfPlay" / "bin" / "Release" / "net8.0"
     bindir.mkdir(parents=True)
     (bindir / "ChineseChess.SelfPlay.dll").write_bytes(b"")
@@ -48,7 +66,7 @@ def _make_tree(tmp_path, stub):
 def _run(tree):
     env = dict(os.environ)
     env["PATH"] = str(tree / "stubbin") + os.pathsep + env["PATH"]
-    return subprocess.run(["bash", str(tree / SCRIPT)], cwd=str(tree), env=env,
+    return subprocess.run([BASH, (tree / SCRIPT).as_posix()], cwd=str(tree), env=env,
                           stdin=subprocess.DEVNULL, capture_output=True, text=True,
                           encoding="utf-8", errors="replace", timeout=180)
 
@@ -64,12 +82,14 @@ def test_paths_derived_from_script_location():
     assert "BASH_SOURCE" in src
 
 
+@pytest.mark.skipif(BASH is None, reason="native bash not available")
 def test_script_parses():
-    proc = subprocess.run(["bash", "-n", str(REPO_ROOT / SCRIPT)], capture_output=True, text=True)
+    proc = subprocess.run([BASH, "-n"], input=source_of(SCRIPT),
+                          capture_output=True, text=True, encoding="utf-8")
     assert proc.returncode == 0, proc.stderr
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+@pytest.mark.skipif(BASH is None, reason="native bash not available")
 def test_failure_counting_and_merge_skip_are_reachable(tmp_path):
     tree = _make_tree(tmp_path, DOTNET_STUB)
     proc = _run(tree)
@@ -78,7 +98,7 @@ def test_failure_counting_and_merge_skip_are_reachable(tmp_path):
     assert not (tree / "data" / "selfplay_parallel" / "train_parallel_2000.jsonl").exists()
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+@pytest.mark.skipif(BASH is None, reason="native bash not available")
 def test_all_success_merges_data(tmp_path):
     tree = _make_tree(tmp_path, DOTNET_STUB_OK)
     proc = _run(tree)

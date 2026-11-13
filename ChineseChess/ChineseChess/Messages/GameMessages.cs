@@ -21,6 +21,6 @@ public sealed record UndoRequestedMessage;
 /// Classic = Negamax Alpha-Beta (original engine)
 /// Neural  = ONNX policy-value network (requires model file)
 /// </summary>
-public enum AiEngineMode { Classic, Neural, NeuralMcts }
+public enum AiEngineMode { Classic, Neural, NeuralMcts, NnueOnnx }
 
 public sealed record AiEngineModeChangedMessage(AiEngineMode Mode);

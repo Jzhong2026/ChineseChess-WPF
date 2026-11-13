@@ -44,7 +44,8 @@ public sealed class MctsAiEngine : IAiEngine, IDisposable
     {
         var watch = Stopwatch.StartNew();
         var result = _mcts.Search(request.Board, request.Side, request.History,
-            simulations: _simulations, temperature: request.Temperature, timeLimitMs: request.TimeLimitMs);
+            simulations: Math.Max(1, request.Simulations ?? _simulations),
+            temperature: request.Temperature, timeLimitMs: request.TimeLimitMs);
         return new AiMoveResult(result.BestMove, new SearchStats(
             0, result.SimulationsRun, watch.Elapsed.TotalMilliseconds, result.BestQ,
             Sims: result.SimulationsRun, Q: result.BestQ), result.MoveStats);

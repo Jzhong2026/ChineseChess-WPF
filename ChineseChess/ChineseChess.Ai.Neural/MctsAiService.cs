@@ -29,18 +29,25 @@ public sealed class MctsAiService
 {
     private readonly XiangqiNeuralAiService _neural;
     private readonly XiangqiEngine _engine;
-
-    // PUCT exploration constant (higher = more exploration)
-    private const float CPuct = 1.5f;
+    private readonly MctsSearchOptions _options;
+    private readonly MaterialQuiescence _tactics;
 
     // Dirichlet noise for root node exploration (AlphaZero style)
     private const float DirichletAlpha = 0.3f;
     private const float DirichletEpsilon = 0.25f;   // fraction of noise at root
 
-    public MctsAiService(XiangqiNeuralAiService neural, XiangqiEngine engine)
+    public MctsAiService(XiangqiNeuralAiService neural, XiangqiEngine engine, MctsSearchOptions? options = null)
     {
         _neural = neural;
         _engine = engine;
+        _options = options ?? new MctsSearchOptions();
+        if (_options.TacticalDepth is < 0 or > 8 || !float.IsFinite(_options.TacticalBlend)
+            || _options.TacticalBlend is < 0 or > 1 || !float.IsFinite(_options.PolicyTemperature)
+            || _options.PolicyTemperature <= 0 || !float.IsFinite(_options.CPuct) || _options.CPuct <= 0
+            || _options.RepetitionDrawCount is < 0 or 1
+            || (_options.FirstPlayReduction.HasValue && (!float.IsFinite(_options.FirstPlayReduction.Value) || _options.FirstPlayReduction < 0)))
+            throw new ArgumentOutOfRangeException(nameof(options));
+        _tactics = new MaterialQuiescence(engine);
     }
 
     /// <summary>
@@ -62,41 +69,59 @@ public sealed class MctsAiService
         IReadOnlyList<Move> history,
         int simulations = 800,
         float temperature = 0.0f,
-        int timeLimitMs = int.MaxValue)
+        int timeLimitMs = int.MaxValue,
+        bool addExplorationNoise = false)
     {
-        var root = new MctsNode(null, 0f, board, side);
-        ExpandNode(root, history);
-        AddDirichletNoise(root);
-
         var watch = Stopwatch.StartNew();
+        var root = new MctsNode(null, 0f, board, side);
+        var previousPositions = _options.RepetitionDrawCount > 0 ? CountHistoryPositions(board, side, history) : new Dictionary<string, int>();
+        ExpandNode(root, history);
+        if (addExplorationNoise) AddDirichletNoise(root);
+        // A network estimate must never override a verified mate/stalemate.
+        // The guard shares the move's clock; incomplete checks prove nothing.
+        CheckRootTactics(root, history, watch, Math.Min(200, timeLimitMs / 4));
         var sim = 0;
 
         for (; sim < simulations; sim++)
         {
             if (watch.ElapsedMilliseconds >= timeLimitMs) break;
+            if (root.ProvenValue.HasValue) break;
 
             // 1. Selection — traverse to a leaf
             var path = new List<(MctsNode Node, int ChildIndex)>();
             var node = root;
             var currentHistory = new List<Move>(history);
+            var pathPositions = new Dictionary<string, int>();
 
-            while (!node.IsLeaf)
+            while (!node.IsLeaf && !node.ProvenValue.HasValue)
             {
                 var (bestChild, bestIndex) = SelectChild(node);
                 path.Add((node, bestIndex));
                 currentHistory.Add(node.ChildMoves![bestIndex]!);
                 node = bestChild;
+                if (_options.RepetitionDrawCount > 0)
+                {
+                    var key = node.RepetitionKey ??= PositionKey(node.Board, node.Side);
+                    pathPositions[key] = pathPositions.GetValueOrDefault(key) + 1;
+                    if (previousPositions.GetValueOrDefault(key) + pathPositions[key] >= _options.RepetitionDrawCount)
+                    {
+                        // Opt in only when the caller adjudicates repetition draws.
+                        // Mate/stalemate takes precedence, matching the arena.
+                        node.ProvenValue = _engine.GetLegalMoves(node.Board, node.Side, currentHistory).Count == 0 ? -1 : 0;
+                        node.IsTerminal = true;
+                        break;
+                    }
+                }
             }
 
             // 2. Expansion & Evaluation — ExpandNode already generates the legal
             // list, so terminal detection reuses it instead of a second
             // GetGameStatus/GetLegalMoves pass over the same position.
-            if (node.IsLeaf && !node.IsTerminal) ExpandNode(node, currentHistory);
+            if (node.IsLeaf && !node.ProvenValue.HasValue) ExpandNode(node, currentHistory);
             float value;
-            if (node.IsTerminal)
+            if (node.ProvenValue.HasValue)
             {
-                // No legal move for the side to move means it lost (mate or stalemate).
-                value = -1f;
+                value = node.ProvenValue.Value;
             }
             else
             {
@@ -105,10 +130,17 @@ public sealed class MctsAiService
                 value = _neural.IsV5Model
                     ? node.CachedValue
                     : (node.Side == Side.Red ? node.CachedValue : -node.CachedValue);
+                if (_options.TacticalDepth > 0)
+                {
+                    var tactical = _tactics.Evaluate(node.Board, node.Side, currentHistory, _options.TacticalDepth,
+                        watch, timeLimitMs, node.ChildMoves!.Select(m => m!).ToArray());
+                    value = (1 - _options.TacticalBlend) * value + _options.TacticalBlend * MathF.Tanh(tactical / 600f);
+                }
             }
 
             // 3. Backpropagation
             BackupValue(node, path, value);
+            for (var i = path.Count - 1; i >= 0; i--) UpdateProof(path[i].Node);
         }
 
         return BuildResult(root, temperature, sim);
@@ -144,6 +176,7 @@ public sealed class MctsAiService
         if (legalMoves.Count == 0)
         {
             node.IsTerminal = true;
+            node.ProvenValue = -1;
             return;
         }
 
@@ -158,7 +191,7 @@ public sealed class MctsAiService
         var maxLogit = float.NegativeInfinity;
         for (var i = 0; i < count; i++)
         {
-            probs[i] = policyLogits[0, MoveEncoder.Encode(legalMoves[i])];
+            probs[i] = policyLogits.GetValue(MoveEncoder.Encode(legalMoves[i])) / _options.PolicyTemperature;
             if (probs[i] > maxLogit) maxLogit = probs[i];
         }
         var expSum = 0f;
@@ -186,18 +219,26 @@ public sealed class MctsAiService
         node.IsLeaf = false;
     }
 
-    private static (MctsNode Child, int ChildIndex) SelectChild(MctsNode node)
+    private (MctsNode Child, int ChildIndex) SelectChild(MctsNode node)
     {
-        var sqrtN = MathF.Sqrt(node.VisitCount);
+        var sqrtN = MathF.Sqrt(Math.Max(1, node.VisitCount));
         var bestScore = float.NegativeInfinity;
         MctsNode? bestChild = null;
         var bestIndex = 0;
+        // Eligibility is a property of the sibling set. Compute it once, rather
+        // than rescanning all siblings for every candidate (quadratic work).
+        var children = node.Children!;
+        var hasWinningChild = children.Any(c => c?.ProvenValue == -1);
+        var hasNonLosingChild = children.Any(c => c?.ProvenValue != 1);
+        var priorValue = _neural.IsV5Model || node.Side == Side.Red ? node.CachedValue : -node.CachedValue;
 
         for (var i = 0; i < node.ChildN!.Length; i++)
         {
+            var proof = children[i]?.ProvenValue;
+            if (hasWinningChild ? proof != -1 : hasNonLosingChild && proof == 1) continue;
             var n = node.ChildN[i];
-            var q = n > 0 ? node.ChildW![i] / n : 0f;
-            var u = CPuct * node.ChildP![i] * sqrtN / (1 + n);
+            var q = n > 0 ? node.ChildW![i] / n : _options.FirstPlayReduction.HasValue ? priorValue - _options.FirstPlayReduction.Value : 0f;
+            var u = _options.CPuct * node.ChildP![i] * sqrtN / (1 + n);
             var score = q + u;
 
             if (score > bestScore)
@@ -211,6 +252,78 @@ public sealed class MctsAiService
         return (bestChild!, bestIndex);
     }
 
+    internal static void UpdateProof(MctsNode node)
+    {
+        if (node.Children is not { Length: > 0 }) return;
+        if (node.Children.Any(c => c?.ProvenValue == -1)) node.ProvenValue = 1;
+        else if (node.Children.All(c => c?.ProvenValue.HasValue == true))
+            node.ProvenValue = node.Children.Any(c => c!.ProvenValue == 0) ? 0 : -1;
+    }
+
+    internal static string PositionKey(Piece?[,] board, Side side) => string.Create(91, (board, side), static (span, state) =>
+    {
+        span[0] = (char)state.side;
+        for (var row = 0; row < 10; row++)
+        for (var col = 0; col < 9; col++)
+        {
+            var piece = state.board[row, col];
+            span[1 + row * 9 + col] = piece is null ? '\0' : (char)(1 + (int)piece.Side * 7 + (int)piece.Type);
+        }
+    });
+
+    internal static Dictionary<string, int> CountHistoryPositions(Piece?[,] board, Side side, IReadOnlyList<Move> history)
+    {
+        var scratch = (Piece?[,])board.Clone();
+        var counts = new Dictionary<string, int>();
+        for (var index = history.Count; index >= 0; index--)
+        {
+            var hash = PositionKey(scratch, side);
+            counts[hash] = counts.GetValueOrDefault(hash) + 1;
+            if (index == 0) break;
+            var move = history[index - 1];
+            scratch[move.From.Row, move.From.Col] = move.Piece;
+            scratch[move.To.Row, move.To.Col] = move.Captured;
+            side = side == Side.Red ? Side.Black : Side.Red;
+        }
+        return counts;
+    }
+
+    private static bool IsEligible(MctsNode node, int index)
+    {
+        if (node.Children is null) return true;
+        if (node.Children.Any(c => c?.ProvenValue == -1)) return node.Children[index]?.ProvenValue == -1;
+        return node.Children[index]?.ProvenValue != 1 || node.Children.All(c => c?.ProvenValue == 1);
+    }
+
+    private void CheckRootTactics(MctsNode root, IReadOnlyList<Move> history, Stopwatch watch, int budgetMs)
+    {
+        if (root.Children is null) return;
+        // First inspect every immediate win before spending time on opponent replies.
+        var replies = new List<Move>?[root.Children.Length];
+        for (var i = 0; i < root.Children.Length; i++)
+        {
+            if (watch.ElapsedMilliseconds >= budgetMs) return;
+            var child = root.Children[i]!;
+            var childHistory = history.Append(root.ChildMoves![i]!).ToList();
+            replies[i] = _engine.GetLegalMoves(child.Board, child.Side, childHistory).ToList();
+            if (replies[i]!.Count == 0) { child.ProvenValue = -1; child.IsTerminal = true; UpdateProof(root); return; }
+        }
+        for (var i = 0; i < root.Children.Length; i++)
+        {
+            var child = root.Children[i]!;
+            var childHistory = history.Append(root.ChildMoves![i]!).ToList();
+            foreach (var reply in replies[i]!)
+            {
+                if (watch.ElapsedMilliseconds >= budgetMs) return;
+                var next = _engine.ApplyMove(child.Board, reply);
+                if (_engine.GetLegalMoves(next, root.Side, childHistory.Append(reply).ToList()).Count != 0) continue;
+                child.ProvenValue = 1;
+                break;
+            }
+        }
+        UpdateProof(root);
+    }
+
     private static void AddDirichletNoise(MctsNode root)
     {
         if (root.ChildP is null || root.ChildP.Length == 0) return;
@@ -220,7 +333,7 @@ public sealed class MctsAiService
             root.ChildP[i] = (1 - DirichletEpsilon) * root.ChildP[i] + DirichletEpsilon * noise[i];
     }
 
-    private MctsResult BuildResult(MctsNode root, float temperature, int simulationsRun)
+    internal static MctsResult BuildResult(MctsNode root, float temperature, int simulationsRun)
     {
         if (root.ChildMoves is null || root.ChildMoves.Length == 0)
             return new MctsResult(null, Array.Empty<(Move, int, float)>(), simulationsRun, 0f);
@@ -234,24 +347,26 @@ public sealed class MctsAiService
             var move = root.ChildMoves[i];
             if (move is null) continue;
             var n = root.ChildN![i];
-            var q = n > 0 ? root.ChildW![i] / n : 0f;
+            var q = root.Children?[i]?.ProvenValue is int proof ? -proof : n > 0 ? root.ChildW![i] / n : 0f;
             stats.Add((move, n, q));
-            if (n > maxVisits) { maxVisits = n; bestMove = move; }
+            if (IsEligible(root, i) && (bestMove is null || n > maxVisits)) { maxVisits = n; bestMove = move; }
         }
 
-        if (temperature > 0.01f && stats.Count > 1)
+        bestMove ??= stats[0].Move;
+        if (temperature > 0.01f && stats.Count > 1 && maxVisits > 0)
         {
-            // Sample proportional to N^(1/temperature)
-            var powered = stats.Select(s => MathF.Pow(s.Visits, 1f / temperature)).ToList();
+            // Scaling every visit count by the maximum preserves probabilities
+            // and keeps weights in [0,1], even for very low temperatures.
+            var powered = stats.Select((s, i) => IsEligible(root, i) ? Math.Pow((double)s.Visits / maxVisits, 1.0 / temperature) : 0).ToList();
             var total = powered.Sum();
             if (total > 0)
             {
-                var r = (float)Random.Shared.NextDouble() * total;
-                var cumulative = 0f;
+                var r = Random.Shared.NextDouble() * total;
+                var cumulative = 0.0;
                 for (var i = 0; i < stats.Count; i++)
                 {
                     cumulative += powered[i];
-                    if (r <= cumulative) { bestMove = stats[i].Move; break; }
+                    if (r < cumulative) { bestMove = stats[i].Move; break; }
                 }
             }
         }
@@ -265,7 +380,7 @@ public sealed class MctsAiService
 
     private static bool SameMove(Move a, Move b) => a.From == b.From && a.To == b.To;
 
-    private static float[] SampleDirichlet(float alpha, int size)
+    internal static float[] SampleDirichlet(float alpha, int size)
     {
         // Sample from Dirichlet(alpha, alpha, ..., alpha) using Gamma distribution
         // Gamma(alpha, 1) approximated as: if alpha < 1, use Marsaglia-Tsang
@@ -285,7 +400,8 @@ public sealed class MctsAiService
     private static float SampleGamma(float alpha)
     {
         // Marsaglia-Tsang "A Simple Method for Generating Gamma Variables" (2000)
-        if (alpha < 1f) alpha = alpha + 1f;
+        if (alpha < 1f)
+            return SampleGamma(alpha + 1f) * MathF.Pow((float)(1.0 - Random.Shared.NextDouble()), 1f / alpha);
         var d = alpha - 1f / 3f;
         var c = 1f / MathF.Sqrt(9f * d);
         while (true)
@@ -322,6 +438,9 @@ internal sealed class MctsNode
     public int VisitCount { get; set; }
     public bool IsLeaf { get; set; } = true;
     public bool IsTerminal { get; set; }
+    /// <summary>Exact game-theoretic result from this node's side-to-move perspective.</summary>
+    public int? ProvenValue { get; set; }
+    internal string? RepetitionKey { get; set; }
 
     // Per-action arrays, indexed by legal-move ordinal (0..legalCount-1).
     public MctsNode?[]? Children { get; set; }

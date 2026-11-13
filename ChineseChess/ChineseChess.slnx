@@ -1,6 +1,11 @@
 <Solution>
+  <Project Path="AiMatchRunner/AiMatchRunner.csproj" />
+  <Project Path="ChineseChess.Ai.Neural/ChineseChess.Ai.Neural.csproj" />
   <Project Path="ChineseChess.Core/ChineseChess.Core.csproj" />
+  <Project Path="ChineseChess.Core.Tests/ChineseChess.Core.Tests.csproj" />
   <Project Path="ChineseChess.Core.Verification/ChineseChess.Core.Verification.csproj" />
   <Project Path="ChineseChess.SelfPlay/ChineseChess.SelfPlay.csproj" />
   <Project Path="ChineseChess/ChineseChess.csproj" />
+  <Project Path="ChineseChess.Wpf.Tests/ChineseChess.Wpf.Tests.csproj" />
+  <Project Path="ChineseChess.TeacherData/ChineseChess.TeacherData.csproj" />
 </Solution>

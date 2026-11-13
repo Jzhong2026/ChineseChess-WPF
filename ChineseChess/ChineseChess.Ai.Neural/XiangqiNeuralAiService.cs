@@ -141,21 +141,22 @@ public sealed class XiangqiNeuralAiService : IDisposable
             var toTensor = results.First(r => r.Name == "to_logits").AsTensor<float>();
 
             var policyDense = new DenseTensor<float>(new[] { 1, MoveEncoder.ActionCount });
+            var policyBuffer = policyDense.Buffer.Span;
 
             // Combined: policy_logit[from*90+to] = from_logit[from] + to_logit[to]
             for (var fromIdx = 0; fromIdx < BoardSize; fromIdx++)
             {
-                var fromLogit = fromTensor[0, fromIdx];
+                var fromLogit = fromTensor.GetValue(fromIdx);
                 for (var toIdx = 0; toIdx < BoardSize; toIdx++)
                 {
-                    policyDense[0, fromIdx * BoardSize + toIdx] = fromLogit + toTensor[0, toIdx];
+                    policyBuffer[fromIdx * BoardSize + toIdx] = fromLogit + toTensor.GetValue(toIdx);
                 }
             }
 
             // Value pred: [1]
             var valueTensor = results.First(r => r.Name == "value_pred").AsTensor<float>();
             var valueDense = new DenseTensor<float>(new[] { 1 });
-            valueDense[0] = valueTensor[0];
+            valueDense.Buffer.Span[0] = valueTensor.GetValue(0);
 
             return (policyDense, valueDense);
         }
@@ -164,13 +165,16 @@ public sealed class XiangqiNeuralAiService : IDisposable
             // Legacy flat model: policy_logits [1, 8100]
             var policyTensor = results.First(r => r.Name == "policy_logits").AsTensor<float>();
             var policyDense = new DenseTensor<float>(new[] { 1, MoveEncoder.ActionCount });
-            for (var i = 0; i < MoveEncoder.ActionCount; i++)
-                policyDense[0, i] = policyTensor[0, i];
+            if (policyTensor is DenseTensor<float> denseSource)
+                denseSource.Buffer.Span.CopyTo(policyDense.Buffer.Span);
+            else
+                for (var i = 0; i < MoveEncoder.ActionCount; i++)
+                    policyDense.Buffer.Span[i] = policyTensor.GetValue(i);
 
             // Value pred: [1]
             var valueTensor = results.First(r => r.Name == "value_pred").AsTensor<float>();
             var valueDense = new DenseTensor<float>(new[] { 1 });
-            valueDense[0] = valueTensor[0];
+            valueDense.Buffer.Span[0] = valueTensor.GetValue(0);
 
             return (policyDense, valueDense);
         }
@@ -237,7 +241,7 @@ public sealed class XiangqiNeuralAiService : IDisposable
                 for (var plane = 0; plane < BoardPlanes; plane++)
                 {
                     var flatIdx = (row * BoardCols + col) * BoardPlanes + plane;
-                    tensor[0, plane, row, col] = flat[flatIdx];
+                    tensor.Buffer.Span[plane * BoardSize + row * BoardCols + col] = flat[flatIdx];
                 }
             }
         }
@@ -253,8 +257,8 @@ public sealed class XiangqiNeuralAiService : IDisposable
             {
                 for (var col = 0; col < BoardCols; col++)
                 {
-                    tensor[0, 14, row, col] = redPlane;
-                    tensor[0, 15, row, col] = blackPlane;
+                    tensor.Buffer.Span[14 * BoardSize + row * BoardCols + col] = redPlane;
+                    tensor.Buffer.Span[15 * BoardSize + row * BoardCols + col] = blackPlane;
                 }
             }
         }

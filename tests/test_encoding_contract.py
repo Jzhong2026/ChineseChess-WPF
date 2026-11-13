@@ -150,12 +150,10 @@ def test_csharp_board_encoder_still_declares_the_contract():
     assert "(int)side * 7 + (int)type" in src
 
 
-def test_csharp_encode_cnn_still_declares_the_contract():
-    src = _csharp_source("XiangqiNeuralAiService.cs")
-    assert "(row * BoardCols + col) * BoardPlanes + plane" in src
-    assert "tensor[0, plane, row, col] = flat[flatIdx]" in src
-    assert "tensor[0, 14, row, col] = redPlane" in src
-    assert "tensor[0, 15, row, col] = blackPlane" in src
+# C# CNN layout/output parity is exercised by NeuralInferenceContractTests
+# against a separate raw ONNX session for both sides and every action. Avoid
+# prescribing a particular tensor indexer spelling: contiguous buffer access
+# implements the same contract without the former per-element index overhead.
 
 
 def test_csharp_move_encoder_still_declares_the_contract():

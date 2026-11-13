@@ -6,6 +6,12 @@ using ChineseChess.Encoding;
 using ChineseChess.Models;
 using ChineseChess.Services;
 
+if (args.FirstOrDefault() == "--arena")
+{
+    ArenaCommand.Run(args.Skip(1).ToArray());
+    return;
+}
+
 // ─── Configuration (overridable via env vars or args) ────────────────────────
 
 int gamesToPlay = ParseInt("CHESS_GAMES", 10);

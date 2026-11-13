@@ -9,6 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Include="..\..\artifacts\xiangqi_nnue_value.onnx" Link="xiangqi_nnue_value.onnx" Condition="Exists('..\..\artifacts\xiangqi_nnue_value.onnx')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\artifacts\xiangqi_nnue_LICENSE.md" Link="NNUE-LICENSE.md" Condition="Exists('..\..\artifacts\xiangqi_nnue_LICENSE.md')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <ProjectReference Include="..\ChineseChess.Core\ChineseChess.Core.csproj" />
     <ProjectReference Include="..\ChineseChess.Ai.Neural\ChineseChess.Ai.Neural.csproj" />
   </ItemGroup>

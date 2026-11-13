@@ -28,9 +28,14 @@ public sealed class ShellViewModel :
     private Position? _selected;
     private IReadOnlyList<Move> _legalMoves = Array.Empty<Move>();
     private CancellationTokenSource? _aiCancellation;
+    private Task<AiTurnOutcome>? _aiSearchTask;
+    private readonly SemaphoreSlim _aiLifecycleGate = new(1, 1);
+    private int _engineChangeVersion;
+    private bool _isDeactivating;
 
     // ONNX model path — relative to the application's directory
     private const string OnnxModelPath = "cnn_policy_value.onnx";
+    private const string NnueModelPath = "xiangqi_nnue_value.onnx";
 
     public ShellViewModel(IEventAggregator events, XiangqiEngine engine, XiangqiAiService ai, SoundService sound, BoardViewModel board, SidePanelViewModel sidePanel)
     {
@@ -51,6 +56,7 @@ public sealed class ShellViewModel :
 
     protected override async Task OnActivatedAsync(CancellationToken cancellationToken)
     {
+        _isDeactivating = false;
         await base.OnActivatedAsync(cancellationToken);
         await PublishBoardState();
     }
@@ -122,18 +128,41 @@ public sealed class ShellViewModel :
 
     public async Task HandleAsync(AiEngineModeChangedMessage message, CancellationToken cancellationToken)
     {
-        SidePanel.AiEngineMode = message.Mode;
-        DisposeNeuralEngine();
-        if (message.Mode != AiEngineMode.Classic)
+        var version = ++_engineChangeVersion;
+        await _aiLifecycleGate.WaitAsync(cancellationToken);
+        try
         {
-            await TryInitNeuralAiAsync();
+            if (version != _engineChangeVersion || _isDeactivating) return;
+            await StopAiAsync();
+            DisposeNeuralEngine();
+            SidePanel.AiEngineMode = message.Mode;
+            if (message.Mode != AiEngineMode.Classic)
+                await TryInitNeuralAiAsync(version);
+            if (version != _engineChangeVersion || _isDeactivating) return;
+            ResetBoardState();
+            await PublishBoardState();
         }
-        await ResetGame();
+        finally
+        {
+            _aiLifecycleGate.Release();
+        }
+        await MaybeStartAiTurn();
     }
 
     protected override async Task OnDeactivateAsync(bool close, CancellationToken cancellationToken)
     {
-        DisposeNeuralEngine();
+        _isDeactivating = true;
+        ++_engineChangeVersion;
+        await _aiLifecycleGate.WaitAsync(cancellationToken);
+        try
+        {
+            await StopAiAsync();
+            DisposeNeuralEngine();
+        }
+        finally
+        {
+            _aiLifecycleGate.Release();
+        }
         await base.OnDeactivateAsync(close, cancellationToken);
     }
 
@@ -166,14 +195,17 @@ public sealed class ShellViewModel :
 
     private bool IsGameOver => _state.Status is GameStatus.RedWins or GameStatus.BlackWins or GameStatus.Draw;
 
-    private async Task TryInitNeuralAiAsync()
+    private async Task TryInitNeuralAiAsync(int version)
     {
-        var kind = ToEngineKind(SidePanel.AiEngineMode);
-        if (kind == AiEngineKind.Classic) return;
-        var modelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, OnnxModelPath);
+        var mode = SidePanel.AiEngineMode;
+        if (mode == AiEngineMode.Classic) return;
+        var kind = ToEngineKind(mode);
+        var isNnue = mode == AiEngineMode.NnueOnnx;
+        var modelFile = isNnue ? NnueModelPath : OnnxModelPath;
+        var modelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, modelFile);
         if (!File.Exists(modelPath))
         {
-            SidePanel.NeuralAiInfo = $"⚠ 模型文件不存在: {OnnxModelPath}";
+            SidePanel.NeuralAiInfo = $"⚠ 模型文件不存在: {modelFile}";
             return;
         }
 
@@ -184,7 +216,15 @@ public sealed class ShellViewModel :
             // freeze the UI if it ran on the dispatcher thread.
             var engine = _engine;
             var simulations = SidePanel.MctsSimulations;
-            _neuralEngine = await Task.Run(() => AiEngineFactory.Create(kind, engine, modelPath, simulations));
+            var loaded = await Task.Run(() => isNnue
+                ? (IAiEngine)new NeuralValueAlphaBetaAiEngine(modelPath, engine, useFairyFeatures: true)
+                : AiEngineFactory.Create(kind, engine, modelPath, simulations));
+            if (version != _engineChangeVersion || _isDeactivating)
+            {
+                (loaded as IDisposable)?.Dispose();
+                return;
+            }
+            _neuralEngine = loaded;
             SidePanel.NeuralAiInfo = "神经网络已加载";
         }
         catch (Exception ex)
@@ -208,7 +248,22 @@ public sealed class ShellViewModel :
 
     private async Task ResetGame()
     {
-        CancelAi();
+        await _aiLifecycleGate.WaitAsync();
+        try
+        {
+            await StopAiAsync();
+            ResetBoardState();
+            await PublishBoardState();
+        }
+        finally
+        {
+            _aiLifecycleGate.Release();
+        }
+        await MaybeStartAiTurn();
+    }
+
+    private void ResetBoardState()
+    {
         _state = _engine.CreateInitialState();
         _selected = null;
         _legalMoves = Array.Empty<Move>();
@@ -216,8 +271,6 @@ public sealed class ShellViewModel :
         SidePanel.AiCountdown = 0;
         SidePanel.RuleNotice = null;
         SidePanel.SearchStats = null;
-        await PublishBoardState();
-        await MaybeStartAiTurn();
     }
 
     private async Task MakeMove(Move move)
@@ -233,25 +286,51 @@ public sealed class ShellViewModel :
 
     private async Task MaybeStartAiTurn()
     {
-        if (IsGameOver || _state.Turn == SidePanel.HumanSide) return;
-
-        CancelAi();
-        var tokenSource = new CancellationTokenSource();
-        _aiCancellation = tokenSource;
-        var token = tokenSource.Token;
-        var snapshot = _state;
-        var thinkMs = Math.Max(100, SidePanel.AiTimeLimitMs);
-        SidePanel.AiThinking = true;
-        SidePanel.AiCountdown = thinkMs;
-        await PublishBoardState();
+        CancellationTokenSource tokenSource;
+        CancellationToken token;
+        GameState snapshot;
+        int thinkMs;
+        Task<AiTurnOutcome> searchTask;
+        await _aiLifecycleGate.WaitAsync();
+        try
+        {
+            if (_isDeactivating || IsGameOver || _state.Turn == SidePanel.HumanSide || _aiCancellation is not null) return;
+            var mode = SidePanel.AiEngineMode;
+            // This mode promises ONNX evaluation. A missing model cannot turn
+            // into an undisclosed classic move under the stronger-mode label.
+            if (mode == AiEngineMode.NnueOnnx && _neuralEngine is null)
+            {
+                SidePanel.NeuralAiInfo ??= "ONNX 加强模型未加载，请切换引擎或安装模型。";
+                return;
+            }
+            tokenSource = new CancellationTokenSource();
+            _aiCancellation = tokenSource;
+            token = tokenSource.Token;
+            snapshot = _state;
+            thinkMs = Math.Max(100, SidePanel.AiTimeLimitMs);
+            var hasNeuralEngine = mode != AiEngineMode.Classic && _neuralEngine is not null;
+            IAiEngine engine = hasNeuralEngine ? _neuralEngine! : _ai;
+            var request = new AiMoveRequest(snapshot.Board, snapshot.Turn, snapshot.History,
+                thinkMs, Difficulty: SidePanel.AiLevel, Simulations: SidePanel.MctsSimulations);
+            SidePanel.AiThinking = true;
+            SidePanel.AiCountdown = thinkMs;
+            // Capture settings on the UI thread. Resets/switches use this gate
+            // and await the worker, since cancelling Task.Run cannot stop it.
+            searchTask = Task.Run(() => RunAiSearch(engine, request, mode, hasNeuralEngine), token);
+            _aiSearchTask = searchTask;
+        }
+        finally
+        {
+            _aiLifecycleGate.Release();
+        }
 
         try
         {
+            await PublishBoardState();
             // Search starts immediately and the countdown runs against the same
             // budget, so the displayed time reflects real thinking time. The
             // countdown only touches its own bound property — republishing the
             // whole board every 100ms rebuilt the move list and all 90 squares.
-            var searchTask = Task.Run(() => RunAiSearch(snapshot), token);
             for (var remaining = thinkMs; remaining > 0 && !searchTask.IsCompleted; remaining -= 100)
             {
                 token.ThrowIfCancellationRequested();
@@ -276,15 +355,32 @@ public sealed class ShellViewModel :
         {
             return;
         }
+        catch (Exception) when (token.IsCancellationRequested)
+        {
+            // StopAiAsync observes this worker before disposing its engine.
+            return;
+        }
+        catch (Exception ex)
+        {
+            SidePanel.RuleNotice = $"AI 搜索失败：{ex.Message}";
+        }
         finally
         {
+            // Cancelling the countdown can finish before the synchronous
+            // search. Keep the worker tracked and its token alive until exit.
+            if (!searchTask.IsCompleted)
+            {
+                try { await searchTask; }
+                catch (Exception) { /* Discarded worker; its failure is observed. */ }
+            }
             if (_aiCancellation == tokenSource)
             {
                 SidePanel.AiThinking = false;
                 SidePanel.AiCountdown = 0;
                 _aiCancellation = null;
-                tokenSource.Dispose();
             }
+            if (_aiSearchTask == searchTask) _aiSearchTask = null;
+            tokenSource.Dispose();
         }
 
         await PublishBoardState();
@@ -297,19 +393,15 @@ public sealed class ShellViewModel :
     private sealed record AiTurnOutcome(Move? Move, SearchStats? Stats, string? NeuralInfo);
 
     /// <summary>Runs on a worker thread; returns results so the UI thread applies them.</summary>
-    private AiTurnOutcome RunAiSearch(GameState snapshot)
+    private static AiTurnOutcome RunAiSearch(IAiEngine engine, AiMoveRequest request, AiEngineMode mode, bool hasNeuralEngine)
     {
-        var mode = SidePanel.AiEngineMode;
-        // Depend on the abstraction: any IAiEngine works here, no per-engine branch.
-        IAiEngine engine = mode == AiEngineMode.Classic || _neuralEngine is null ? _ai : _neuralEngine;
-        var request = new AiMoveRequest(snapshot.Board, snapshot.Turn, snapshot.History,
-            SidePanel.AiTimeLimitMs, Difficulty: SidePanel.AiLevel);
         var result = engine.ChooseMove(request);
 
         string? info = mode switch
         {
-            AiEngineMode.Neural when _neuralEngine is not null => $"NN Policy | Value: {result.Stats.Q:+0.00;-0.00;0.00}",
-            AiEngineMode.NeuralMcts when _neuralEngine is not null => $"MCTS {result.Stats.Sims} sims | Q: {result.Stats.Q:+0.00;-0.00;0.00}",
+            AiEngineMode.Neural when hasNeuralEngine => $"NN Policy | Value: {result.Stats.Q:+0.00;-0.00;0.00}",
+            AiEngineMode.NeuralMcts when hasNeuralEngine => $"MCTS {result.Stats.Sims} sims | Q: {result.Stats.Q:+0.00;-0.00;0.00}",
+            AiEngineMode.NnueOnnx when hasNeuralEngine => $"ONNX 加强 | 深度 {result.Stats.DepthReached} | 评价 {result.Stats.BestScore:+0;-0;0}",
             AiEngineMode.Classic => null,
             // A neural mode was requested but is unavailable: keep the reason visible.
             _ => "⚠ 神经网络不可用，已回退传统搜索",
@@ -336,7 +428,25 @@ public sealed class ShellViewModel :
     private void CancelAi()
     {
         _aiCancellation?.Cancel();
-        _aiCancellation?.Dispose();
         _aiCancellation = null;
+    }
+
+    // Call while holding _aiLifecycleGate so another turn cannot start before
+    // the previous search exits. The turn method owns its token's disposal.
+    private async Task StopAiAsync()
+    {
+        var pending = _aiSearchTask;
+        CancelAi();
+        if (pending is null) return;
+        try
+        {
+            await pending;
+        }
+        catch (Exception)
+        {
+            // The discarded turn is cancelled; observing its failure here
+            // still guarantees that no worker can use the retired engine.
+        }
+        if (_aiSearchTask == pending) _aiSearchTask = null;
     }
 }

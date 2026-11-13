@@ -5,6 +5,16 @@
 - [面试项目介绍与技术复盘](docs/INTERVIEW_PROJECT_GUIDE.md)：适合面试时介绍项目开发过程、技术细节、问题排查和项目亮点。
 - [开发日志](docs/DEV_LOG.md)：记录 AI 训练、ONNX 集成、MCTS 优化等迭代过程。
 
+## 使用 ONNX 加强引擎
+
+运行WPF应用后，在“AI 引擎”中选择 **ONNX 加强**。模型随构建复制，原NN策略及NN+MCTS模式继续保留。
+
+```powershell
+dotnet run --project ChineseChess/ChineseChess -c Release
+```
+
+2026-11-13本地验收：对当前传统困难Level4，双方每步1200ms、20个开局交换红黑，40局36胜0负4和、得分95%，逐手审计通过。引擎采用公开预训练NNUE权重转ONNX及本项目alpha-beta搜索，运行不调用外部棋类引擎；该成绩是此配置的工程验收，不代表人类Elo。见[模型来源和复现](artifacts/NNUE_MODEL.md)、[完整实验及失败记录](docs/devlog/2026-11-13.md)。
+
 ## Self-play 数据生成
 
 `ChineseChess.SelfPlay` 会输出 JSONL，每一行是一个可直接供 `train_chinese_chess_policy_value.py` 使用的局面样本。默认参数已调成更适合训练数据采样的配置：

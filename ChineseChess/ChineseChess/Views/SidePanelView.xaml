@@ -120,7 +120,7 @@
                        Foreground="#5F5148"
                        FontWeight="Bold"
                        Margin="0,0,0,8" />
-            <UniformGrid Columns="3" Margin="0,0,0,10">
+            <UniformGrid Columns="2" Margin="0,0,0,10">
                 <Button Content="传统搜索" cal:Message.Attach="[Event Click] = [Action ChooseClassicMode]">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
@@ -151,6 +151,18 @@
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsNeuralMctsMode}" Value="True">
                                     <Setter Property="Background" Value="#7C3AED" />
+                                    <Setter Property="Foreground" Value="#FFFAF0" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Content="ONNX 加强" cal:Message.Attach="[Event Click] = [Action ChooseNnueOnnxMode]">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource SegmentButtonStyle}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNnueOnnxMode}" Value="True">
+                                    <Setter Property="Background" Value="#9A5D15" />
                                     <Setter Property="Foreground" Value="#FFFAF0" />
                                 </DataTrigger>
                             </Style.Triggers>

@@ -39,6 +39,8 @@ public sealed class AlphaBetaSearch
         Piece?[,] board, Side side, int maxDepth, IReadOnlyList<Move> history,
         int timeLimitMs, MoveSelectionOptions selectionOptions)
     {
+        // A new root may have a different AI side and repetition history.
+        _table.Clear();
         var watch = Stopwatch.StartNew();
         var legalMoves = _orderer.Order(board, _engine.GetLegalMoves(board, side, history), depth: 0).ToList();
         if (legalMoves.Count == 0) return new AiSearchResult(null, new SearchStats(0, 0, 0, 0));
@@ -104,7 +106,7 @@ public sealed class AlphaBetaSearch
 
         var hash = ZobristHash.Compute(board, turn);
         Move? ttBestMove = null;
-        if (_table.TryProbe(hash, depth, alpha, beta, out var entry, out var cutoff))
+        if (_table.TryProbe(hash, depth, alpha, beta, out var entry, out var cutoff, depthFromRoot))
         {
             state.TtHits++;
             ttBestMove = entry!.BestMove;
@@ -140,7 +142,7 @@ public sealed class AlphaBetaSearch
             var flag = best <= alphaOrig ? TranspositionTable.Upper
                 : best >= beta ? TranspositionTable.Lower
                 : TranspositionTable.Exact;
-            _table.Store(hash, new TranspositionTable.Entry(depth, best, flag, bestMove));
+            _table.Store(hash, new TranspositionTable.Entry(depth, best, flag, bestMove), depthFromRoot);
             state.TtStores++;
             if (ttBestMove is not null && bestMove is not null
                 && ttBestMove.From == bestMove.From && ttBestMove.To == bestMove.To) state.TtBestMoveHits++;
@@ -186,7 +188,7 @@ public sealed class AlphaBetaSearch
             var score = -Quiescence(
                 _engine.ApplyMove(board, move), _engine.Opposite(turn), -beta, -alpha,
                 _engine.Opposite(perspective), aiSide, history.Concat(new[] { move }).ToList(),
-                state, depthFromRoot, qDepth + 1);
+                state, depthFromRoot + 1, qDepth + 1);
 
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;

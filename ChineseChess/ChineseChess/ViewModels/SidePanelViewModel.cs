@@ -163,6 +163,7 @@ public sealed class SidePanelViewModel : Screen, IHandle<BoardStateChangedMessag
                 NotifyOfPropertyChange(nameof(IsClassicMode));
                 NotifyOfPropertyChange(nameof(IsNeuralMode));
                 NotifyOfPropertyChange(nameof(IsNeuralMctsMode));
+                NotifyOfPropertyChange(nameof(IsNnueOnnxMode));
                 NotifyOfPropertyChange(nameof(ShowClassicStats));
                 NotifyOfPropertyChange(nameof(ShowNeuralInfo));
             }
@@ -188,6 +189,7 @@ public sealed class SidePanelViewModel : Screen, IHandle<BoardStateChangedMessag
     public bool IsClassicMode => AiEngineMode == AiEngineMode.Classic;
     public bool IsNeuralMode => AiEngineMode == AiEngineMode.Neural;
     public bool IsNeuralMctsMode => AiEngineMode == AiEngineMode.NeuralMcts;
+    public bool IsNnueOnnxMode => AiEngineMode == AiEngineMode.NnueOnnx;
     public bool ShowClassicStats => AiEngineMode == AiEngineMode.Classic && HasSearchStats;
     public bool ShowNeuralInfo => AiEngineMode != AiEngineMode.Classic;
     public bool HasNeuralAiInfo => !string.IsNullOrEmpty(NeuralAiInfo);
@@ -201,6 +203,7 @@ public sealed class SidePanelViewModel : Screen, IHandle<BoardStateChangedMessag
     public async Task ChooseClassicMode() => await _events.PublishOnUIThreadAsync(new AiEngineModeChangedMessage(AiEngineMode.Classic));
     public async Task ChooseNeuralMode() => await _events.PublishOnUIThreadAsync(new AiEngineModeChangedMessage(AiEngineMode.Neural));
     public async Task ChooseNeuralMctsMode() => await _events.PublishOnUIThreadAsync(new AiEngineModeChangedMessage(AiEngineMode.NeuralMcts));
+    public async Task ChooseNnueOnnxMode() => await _events.PublishOnUIThreadAsync(new AiEngineModeChangedMessage(AiEngineMode.NnueOnnx));
     public async Task Restart() => await _events.PublishOnUIThreadAsync(new RestartRequestedMessage());
     public async Task Undo() => await _events.PublishOnUIThreadAsync(new UndoRequestedMessage());
 

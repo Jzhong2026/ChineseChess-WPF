@@ -14,7 +14,8 @@ public sealed record AiMoveRequest(
     int TimeLimitMs,
     MoveSelectionOptions? Selection = null,
     int Difficulty = 4,
-    float Temperature = 0f);
+    float Temperature = 0f,
+    int? Simulations = null);
 
 /// <summary>
 /// The abstraction every AI engine implements so callers (UI, match runner,
